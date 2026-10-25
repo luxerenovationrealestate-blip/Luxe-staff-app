@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, addDoc, onSnapshot, query, doc, setDoc } from 'firebase/firestore';
 
-// Ваши персональные ключи Firebase
+// Конфигурация Firebase через глобальный объект window.firebase
 const firebaseConfig = {
   apiKey: "AIzaSyD6wwP7nh0sq_7xe3d8Zv62R_KrwJtghH0",
   authDomain: "luxe-renovation-72e1a.firebaseapp.com",
@@ -12,8 +10,11 @@ const firebaseConfig = {
   appId: "1:768348735399:web:e42045b5232caa5189d882"
 };
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+// Инициализация Firebase без npm-модулей
+if (!window.firebase.apps.length) {
+  window.firebase.initializeApp(firebaseConfig);
+}
+const db = window.firebase.firestore();
 
 export default function App() {
   const [user, setUser] = useState(() => {
@@ -42,21 +43,21 @@ export default function App() {
 
   const companyEmail = 'luxerenovationrealestate@gmail.com';
 
-  // Синхронизация всех данных из облака в реальном времени
+  // Синхронизация данных из облака в реальном времени
   useEffect(() => {
-    const unsubMaterials = onSnapshot(query(collection(db, 'materials')), (snapshot) => {
+    const unsubMaterials = db.collection('materials').onSnapshot((snapshot) => {
       setMaterials(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
-    const unsubIssues = onSnapshot(query(collection(db, 'issues')), (snapshot) => {
+    const unsubIssues = db.collection('issues').onSnapshot((snapshot) => {
       setIssues(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
-    const unsubEmergencies = onSnapshot(query(collection(db, 'emergencies')), (snapshot) => {
+    const unsubEmergencies = db.collection('emergencies').onSnapshot((snapshot) => {
       setEmergencies(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
-    const unsubShifts = onSnapshot(query(collection(db, 'shifts')), (snapshot) => {
+    const unsubShifts = db.collection('shifts').onSnapshot((snapshot) => {
       setActiveEmployees(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
@@ -68,7 +69,6 @@ export default function App() {
     };
   }, []);
 
-  // Сохранение пользователя локально
   useEffect(() => {
     localStorage.setItem('luxe_user', JSON.stringify(user));
   }, [user]);
@@ -81,7 +81,7 @@ export default function App() {
         setTimer(t => {
           const newTime = t + 1;
           if (user && user.role === 'employee') {
-            setDoc(doc(db, 'shifts', user.email.replace(/[@.]/g, '_')), {
+            db.collection('shifts').doc(user.email.replace(/[@.]/g, '_')).set({
               name: user.name,
               email: user.email,
               status: 'Работает',
@@ -112,7 +112,7 @@ export default function App() {
   const changeShift = async (status) => {
     setShiftStatus(status);
     if (user && user.role === 'employee') {
-      await setDoc(doc(db, 'shifts', user.email.replace(/[@.]/g, '_')), {
+      await db.collection('shifts').doc(user.email.replace(/[@.]/g, '_')).set({
         name: user.name,
         email: user.email,
         status: status === 'working' ? 'Работает' : status === 'break' ? 'Обед' : 'Завершил смену',
@@ -125,7 +125,7 @@ export default function App() {
   const addMaterial = async (e) => {
     e.preventDefault();
     if (!matName) return;
-    await addDoc(collection(db, 'materials'), {
+    await db.collection('materials').add({
       user: user.name,
       name: matName,
       qty: matQty,
@@ -139,7 +139,7 @@ export default function App() {
   const addIssue = async (e) => {
     e.preventDefault();
     if (!issueText) return;
-    await addDoc(collection(db, 'issues'), {
+    await db.collection('issues').add({
       user: user.name,
       text: issueText,
       status: 'Открыто',
@@ -151,7 +151,7 @@ export default function App() {
   const addEmergency = async (e) => {
     e.preventDefault();
     if (!emText) return;
-    await addDoc(collection(db, 'emergencies'), {
+    await db.collection('emergencies').add({
       user: user.name,
       text: emText,
       time: new Date().toLocaleTimeString(),
