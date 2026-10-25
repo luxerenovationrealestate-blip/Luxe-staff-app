@@ -83,8 +83,8 @@ export default function App() {
     };
   }, []);
 
-  // Автоматическое обновление геопозиции и адреса на стороне сотрудника
-  const updateGeoLocation = (currentSeconds, currentStatus) => {
+  // Функция обновления геолокации и отправки данных в базу
+  const updateGeoLocation = async (currentSeconds, currentStatus, activeStartTime, activePausedSec) => {
     if (navigator.geolocation && user && user.role === 'employee') {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
@@ -114,8 +114,8 @@ export default function App() {
             name: user.name,
             email: user.email,
             status: currentStatus,
-            startTime: startTime,
-            pausedSeconds: pausedSeconds,
+            startTime: activeStartTime,
+            pausedSeconds: activePausedSec,
             timer: currentSeconds,
             lat: lat,
             lng: lng,
@@ -123,7 +123,19 @@ export default function App() {
             updatedAt: Date.now()
           }, { merge: true });
         },
-        () => {},
+        async () => {
+          // Если геолокация недоступна, всё равно отправляем данные таймера
+          await db.collection('shifts').doc(user.email.replace(/[@.]/g, '_')).set({
+            name: user.name,
+            email: user.email,
+            status: currentStatus,
+            startTime: activeStartTime,
+            pausedSeconds: activePausedSec,
+            timer: currentSeconds,
+            address: 'Геолокация отключена',
+            updatedAt: Date.now()
+          }, { merge: true });
+        },
         { enableHighAccuracy: true }
       );
     }
@@ -134,9 +146,9 @@ export default function App() {
       const currentSeconds = pausedSeconds + Math.floor((now - startTime) / 1000);
       setTimer(currentSeconds);
       
-      // Обновляем геолокацию и адрес каждые 15 секунд
+      // Обновляем данные в базе каждые 15 секунд
       if (now % 15000 < 1000) {
-        updateGeoLocation(currentSeconds, 'Работает');
+        updateGeoLocation(currentSeconds, 'Работает', startTime, pausedSeconds);
       }
     }
   }, [now, shiftStatus, startTime, pausedSeconds, user]);
@@ -185,7 +197,7 @@ export default function App() {
     let statusText = 'Работает';
 
     if (status === 'working') {
-      if (shiftStatus !== 'working') {
+      if (shiftStatus !== 'working' || !startTime) {
         newStartTime = currentTime;
         setStartTime(newStartTime);
       }
@@ -200,7 +212,6 @@ export default function App() {
       }
       statusText = 'Обед';
     } else if (status === 'off') {
-      // Надежно берем адрес прямо из активного документа сотрудника в базе
       let currentShiftAddress = 'Адрес не указан';
       if (user && user.role === 'employee') {
         const empDocId = user.email.replace(/[@.]/g, '_');
@@ -238,7 +249,8 @@ export default function App() {
     setShiftStatus(status);
 
     if (status !== 'off' && user && user.role === 'employee') {
-      updateGeoLocation(finalTimer, statusText);
+      // Сразу отправляем корректный newStartTime в базу
+      await updateGeoLocation(finalTimer, statusText, newStartTime, newPausedSeconds);
     }
   };
 
