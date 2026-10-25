@@ -10,7 +10,7 @@ const firebaseConfig = {
   appId: "1:768348735399:web:e42045b5232caa5189d882"
 };
 
-// Инициализация Firebase без npm-модулей
+// Инициализация Firebase
 if (!window.firebase.apps.length) {
   window.firebase.initializeApp(firebaseConfig);
 }
@@ -41,6 +41,7 @@ export default function App() {
   const [activeEmployees, setActiveEmployees] = useState([]);
   const [shiftHistory, setShiftHistory] = useState([]);
 
+  // Поля ввода
   const [matName, setMatName] = useState('');
   const [matQty, setMatQty] = useState('');
   const [issueText, setIssueText] = useState('');
@@ -149,7 +150,6 @@ export default function App() {
         finalTimer = newPausedSeconds;
       }
     } else if (status === 'off') {
-      // Если смена завершается, сохраняем итоговую статистику в историю
       if (timer > 0 && user && user.role === 'employee') {
         await db.collection('shift_history').add({
           name: user.name,
@@ -169,7 +169,6 @@ export default function App() {
       localStorage.removeItem('luxe_start_time');
       localStorage.removeItem('luxe_paused_sec');
 
-      // Удаляем из активных смен на экране владельца
       if (user && user.role === 'employee') {
         await db.collection('shifts').doc(user.email.replace(/[@.]/g, '_')).delete();
       }
@@ -197,7 +196,7 @@ export default function App() {
       user: user.name,
       name: matName,
       qty: matQty,
-      status: 'В обработке',
+      status: user.role === 'owner' ? 'Заказано' : 'В обработке',
       timestamp: Date.now()
     });
     setMatName('');
@@ -228,7 +227,13 @@ export default function App() {
     setEmText('');
   };
 
-  // Функции управления для Владельца
+  // Функции удаления и изменения статусов
+  const deleteItem = async (col, id) => {
+    if (confirm('Вы уверены, что хотите удалить эту запись?')) {
+      await db.collection(col).doc(id).delete();
+    }
+  };
+
   const updateMaterialStatus = async (id, status) => {
     await db.collection('materials').doc(id).update({ status });
   };
@@ -365,7 +370,17 @@ export default function App() {
               </div>
             </div>
 
-            {/* Текущие активные сотрудники */}
+            {/* Владелец заказывает материалы сам */}
+            <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
+              <h3 className="font-semibold mb-3 text-amber-400">➕ Добавить заказ материалов от компании</h3>
+              <form onSubmit={addMaterial} className="flex flex-col md:flex-row gap-3">
+                <input type="text" placeholder="Название материала" value={matName} onChange={e => setMatName(e.target.value)} className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white" />
+                <input type="text" placeholder="Количество" value={matQty} onChange={e => setMatQty(e.target.value)} className="w-full md:w-36 bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white" />
+                <button type="submit" className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-5 py-2 rounded-lg text-sm">Добавить</button>
+              </form>
+            </div>
+
+            {/* Активные сотрудники */}
             <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
               <h3 className="font-semibold mb-3 text-amber-400">👷 Активные сотрудники на объектах сейчас</h3>
               {activeEmployees.length === 0 ? <p className="text-xs text-slate-500">Нет работающих в данный момент</p> : (
@@ -385,9 +400,9 @@ export default function App() {
               )}
             </div>
 
-            {/* Статистика завершенных смен */}
+            {/* История отработанного времени с возможностью удаления */}
             <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
-              <h3 className="font-semibold mb-3 text-amber-400">📊 История и статистика отработанного времени</h3>
+              <h3 className="font-semibold mb-3 text-amber-400">📊 История отработанного времени</h3>
               {shiftHistory.length === 0 ? <p className="text-xs text-slate-500">История смен пока пуста</p> : (
                 <div className="space-y-2">
                   {shiftHistory.map(sh => (
@@ -396,13 +411,17 @@ export default function App() {
                         <span className="font-bold text-white">{sh.name}</span>
                         <div className="text-xs text-slate-400">{sh.date}</div>
                       </div>
-                      <div className="font-mono text-amber-400 font-bold">Отработано: {formatTime(sh.totalTime)}</div>
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono text-amber-400 font-bold">{formatTime(sh.totalTime)}</span>
+                        <button onClick={() => deleteItem('shift_history', sh.id)} className="text-xs bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white px-2 py-1 rounded transition">Удалить</button>
+                      </div>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
+            {/* Форс-мажоры с кнопкой удаления */}
             {emergencies.length > 0 && (
               <div className="bg-red-950/40 border border-red-500/50 p-5 rounded-2xl">
                 <h3 className="font-semibold text-red-400 mb-3">🚨 Экстренные сообщения</h3>
@@ -410,14 +429,17 @@ export default function App() {
                   {emergencies.map(e => (
                     <div key={e.id} className="bg-slate-900 p-3 rounded-lg flex justify-between items-center text-sm">
                       <div><span className="font-bold text-red-400">{e.user}:</span> {e.text}</div>
-                      <span className="text-xs text-slate-500">{e.time}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-slate-500">{e.time}</span>
+                        <button onClick={() => deleteItem('emergencies', e.id)} className="text-xs bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white px-2 py-1 rounded transition">Удалить</button>
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* Заказы материалов с возможностью изменения статуса */}
+            {/* Заказы материалов с изменением статуса и удалением */}
             <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
               <h3 className="font-semibold mb-3 text-amber-400">📦 Заказы материалов (Управление)</h3>
               {materials.length === 0 ? <p className="text-xs text-slate-500">Заказов пока нет</p> : (
@@ -428,7 +450,6 @@ export default function App() {
                         <span className="font-bold text-amber-400">{m.user}:</span> {m.name} ({m.qty})
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs bg-slate-800 text-slate-300 px-2 py-1 rounded border border-slate-700">{m.status}</span>
                         <select 
                           value={m.status} 
                           onChange={(e) => updateMaterialStatus(m.id, e.target.value)}
@@ -439,6 +460,7 @@ export default function App() {
                           <option value="Доставлено">Доставлено</option>
                           <option value="Отменено">Отменено</option>
                         </select>
+                        <button onClick={() => deleteItem('materials', m.id)} className="text-xs bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white px-2.5 py-1 rounded transition">Удалить</button>
                       </div>
                     </div>
                   ))}
@@ -446,36 +468,6 @@ export default function App() {
               )}
             </div>
 
-            {/* Обращения работников с возможностью изменения статуса */}
+            {/* Обращения работников с изменением статуса и удалением */}
             <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
-              <h3 className="font-semibold mb-3 text-amber-400">💬 Обращения работников (Управление)</h3>
-              {issues.length === 0 ? <p className="text-xs text-slate-500">Обращений пока нет</p> : (
-                <div className="space-y-3">
-                  {issues.map(i => (
-                    <div key={i.id} className="bg-slate-900 p-3 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-sm">
-                      <div>
-                        <span className="font-bold text-amber-400">{i.user}:</span> {i.text}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs bg-slate-800 text-slate-300 px-2 py-1 rounded border border-slate-700">{i.status}</span>
-                        <select 
-                          value={i.status} 
-                          onChange={(e) => updateIssueStatus(i.id, e.target.value)}
-                          className="bg-slate-800 border border-slate-700 text-xs rounded px-2 py-1 text-white"
-                        >
-                          <option value="Открыто">Открыто</option>
-                          <option value="В работе">В работе</option>
-                          <option value="Решено">Решено</option>
-                        </select>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </main>
-    </div>
-  );
-}
+              <h3 className="font-semibold mb-3 text-amber-40
