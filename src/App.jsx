@@ -33,13 +33,13 @@ export default function App() {
   const [pausedSeconds, setPausedSeconds] = useState(() => Number(localStorage.getItem('luxe_paused_sec')) || 0);
   const [timer, setTimer] = useState(0);
 
-  // Глобальный тиккер текущего времени для обновления интерфейса каждую секунду
   const [now, setNow] = useState(Date.now());
 
   const [materials, setMaterials] = useState([]);
   const [issues, setIssues] = useState([]);
   const [emergencies, setEmergencies] = useState([]);
   const [activeEmployees, setActiveEmployees] = useState([]);
+  const [shiftHistory, setShiftHistory] = useState([]);
 
   const [matName, setMatName] = useState('');
   const [matQty, setMatQty] = useState('');
@@ -48,7 +48,7 @@ export default function App() {
 
   const companyEmail = 'luxerenovationrealestate@gmail.com';
 
-  // Обновляем текущее время каждую секунду для живого тика интерфейса
+  // Обновляем текущую секунду для живого таймера
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
@@ -72,15 +72,20 @@ export default function App() {
       setActiveEmployees(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
+    const unsubHistory = db.collection('shift_history').orderBy('timestamp', 'desc').onSnapshot((snapshot) => {
+      setShiftHistory(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
     return () => {
       unsubMaterials();
       unsubIssues();
       unsubEmergencies();
       unsubShifts();
+      unsubHistory();
     };
   }, []);
 
-  // Расчет таймера сотрудника по системному времени (не сбрасывается при закрытии вкладки)
+  // Расчет таймера сотрудника по системному времени
   useEffect(() => {
     if (shiftStatus === 'working' && startTime) {
       const currentSeconds = pausedSeconds + Math.floor((now - startTime) / 1000);
@@ -144,6 +149,17 @@ export default function App() {
         finalTimer = newPausedSeconds;
       }
     } else if (status === 'off') {
+      // Если смена завершается, сохраняем итоговую статистику в историю
+      if (timer > 0 && user && user.role === 'employee') {
+        await db.collection('shift_history').add({
+          name: user.name,
+          email: user.email,
+          totalTime: timer,
+          date: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString(),
+          timestamp: currentTime
+        });
+      }
+
       newPausedSeconds = 0;
       newStartTime = null;
       finalTimer = 0;
@@ -152,15 +168,20 @@ export default function App() {
       setTimer(0);
       localStorage.removeItem('luxe_start_time');
       localStorage.removeItem('luxe_paused_sec');
+
+      // Удаляем из активных смен на экране владельца
+      if (user && user.role === 'employee') {
+        await db.collection('shifts').doc(user.email.replace(/[@.]/g, '_')).delete();
+      }
     }
 
     setShiftStatus(status);
 
-    if (user && user.role === 'employee') {
+    if (status !== 'off' && user && user.role === 'employee') {
       await db.collection('shifts').doc(user.email.replace(/[@.]/g, '_')).set({
         name: user.name,
         email: user.email,
-        status: status === 'working' ? 'Работает' : status === 'break' ? 'Обед' : 'Завершил смену',
+        status: status === 'working' ? 'Работает' : 'Обед',
         startTime: newStartTime,
         pausedSeconds: newPausedSeconds,
         timer: finalTimer,
@@ -207,7 +228,15 @@ export default function App() {
     setEmText('');
   };
 
-  // Расчет живого таймера для панели владельца
+  // Функции управления для Владельца
+  const updateMaterialStatus = async (id, status) => {
+    await db.collection('materials').doc(id).update({ status });
+  };
+
+  const updateIssueStatus = async (id, status) => {
+    await db.collection('issues').doc(id).update({ status });
+  };
+
   const getEmployeeLiveTimer = (emp) => {
     if (emp.status === 'Работает' && emp.startTime) {
       const paused = emp.pausedSeconds || 0;
@@ -336,9 +365,10 @@ export default function App() {
               </div>
             </div>
 
+            {/* Текущие активные сотрудники */}
             <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
-              <h3 className="font-semibold mb-3 text-amber-400">👷 Статус сотрудников на объектах</h3>
-              {activeEmployees.length === 0 ? <p className="text-xs text-slate-500">Нет активных смен</p> : (
+              <h3 className="font-semibold mb-3 text-amber-400">👷 Активные сотрудники на объектах сейчас</h3>
+              {activeEmployees.length === 0 ? <p className="text-xs text-slate-500">Нет работающих в данный момент</p> : (
                 <div className="space-y-2">
                   {activeEmployees.map(emp => {
                     const liveSec = getEmployeeLiveTimer(emp);
@@ -351,6 +381,24 @@ export default function App() {
                       </div>
                     );
                   })}
+                </div>
+              )}
+            </div>
+
+            {/* Статистика завершенных смен */}
+            <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
+              <h3 className="font-semibold mb-3 text-amber-400">📊 История и статистика отработанного времени</h3>
+              {shiftHistory.length === 0 ? <p className="text-xs text-slate-500">История смен пока пуста</p> : (
+                <div className="space-y-2">
+                  {shiftHistory.map(sh => (
+                    <div key={sh.id} className="bg-slate-900 p-3 rounded-lg flex justify-between items-center text-sm">
+                      <div>
+                        <span className="font-bold text-white">{sh.name}</span>
+                        <div className="text-xs text-slate-400">{sh.date}</div>
+                      </div>
+                      <div className="font-mono text-amber-400 font-bold">Отработано: {formatTime(sh.totalTime)}</div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -369,32 +417,57 @@ export default function App() {
               </div>
             )}
 
+            {/* Заказы материалов с возможностью изменения статуса */}
             <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
-              <h3 className="font-semibold mb-3 text-amber-400">📦 Заказы материалов</h3>
+              <h3 className="font-semibold mb-3 text-amber-400">📦 Заказы материалов (Управление)</h3>
               {materials.length === 0 ? <p className="text-xs text-slate-500">Заказов пока нет</p> : (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {materials.map(m => (
-                    <div key={m.id} className="bg-slate-900 p-3 rounded-lg flex justify-between items-center text-sm">
+                    <div key={m.id} className="bg-slate-900 p-3 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-sm">
                       <div>
                         <span className="font-bold text-amber-400">{m.user}:</span> {m.name} ({m.qty})
                       </div>
-                      <span className="text-xs bg-amber-500/10 text-amber-400 px-2 py-1 rounded border border-amber-500/20">{m.status}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs bg-slate-800 text-slate-300 px-2 py-1 rounded border border-slate-700">{m.status}</span>
+                        <select 
+                          value={m.status} 
+                          onChange={(e) => updateMaterialStatus(m.id, e.target.value)}
+                          className="bg-slate-800 border border-slate-700 text-xs rounded px-2 py-1 text-white"
+                        >
+                          <option value="В обработке">В обработке</option>
+                          <option value="Заказано">Заказано</option>
+                          <option value="Доставлено">Доставлено</option>
+                          <option value="Отменено">Отменено</option>
+                        </select>
+                      </div>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
+            {/* Обращения работников с возможностью изменения статуса */}
             <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
-              <h3 className="font-semibold mb-3 text-amber-400">💬 Обращения работников</h3>
+              <h3 className="font-semibold mb-3 text-amber-400">💬 Обращения работников (Управление)</h3>
               {issues.length === 0 ? <p className="text-xs text-slate-500">Обращений пока нет</p> : (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {issues.map(i => (
-                    <div key={i.id} className="bg-slate-900 p-3 rounded-lg flex justify-between items-center text-sm">
+                    <div key={i.id} className="bg-slate-900 p-3 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-sm">
                       <div>
                         <span className="font-bold text-amber-400">{i.user}:</span> {i.text}
                       </div>
-                      <span className="text-xs bg-blue-500/10 text-blue-400 px-2 py-1 rounded border border-blue-500/20">{i.status}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs bg-slate-800 text-slate-300 px-2 py-1 rounded border border-slate-700">{i.status}</span>
+                        <select 
+                          value={i.status} 
+                          onChange={(e) => updateIssueStatus(i.id, e.target.value)}
+                          className="bg-slate-800 border border-slate-700 text-xs rounded px-2 py-1 text-white"
+                        >
+                          <option value="Открыто">Открыто</option>
+                          <option value="В работе">В работе</option>
+                          <option value="Решено">Решено</option>
+                        </select>
+                      </div>
                     </div>
                   ))}
                 </div>
