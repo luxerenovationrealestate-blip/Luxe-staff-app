@@ -33,6 +33,9 @@ export default function App() {
   const [pausedSeconds, setPausedSeconds] = useState(() => Number(localStorage.getItem('luxe_paused_sec')) || 0);
   const [timer, setTimer] = useState(0);
 
+  // Глобальный тиккер текущего времени для обновления интерфейса каждую секунду
+  const [now, setNow] = useState(Date.now());
+
   const [materials, setMaterials] = useState([]);
   const [issues, setIssues] = useState([]);
   const [emergencies, setEmergencies] = useState([]);
@@ -44,6 +47,12 @@ export default function App() {
   const [emText, setEmText] = useState('');
 
   const companyEmail = 'luxerenovationrealestate@gmail.com';
+
+  // Обновляем текущее время каждую секунду для живого тика интерфейса
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Синхронизация данных из облака в реальном времени
   useEffect(() => {
@@ -71,6 +80,26 @@ export default function App() {
     };
   }, []);
 
+  // Расчет таймера сотрудника по системному времени (не сбрасывается при закрытии вкладки)
+  useEffect(() => {
+    if (shiftStatus === 'working' && startTime) {
+      const currentSeconds = pausedSeconds + Math.floor((now - startTime) / 1000);
+      setTimer(currentSeconds);
+
+      if (user && user.role === 'employee') {
+        db.collection('shifts').doc(user.email.replace(/[@.]/g, '_')).set({
+          name: user.name,
+          email: user.email,
+          status: 'Работает',
+          startTime: startTime,
+          pausedSeconds: pausedSeconds,
+          timer: currentSeconds,
+          updatedAt: now
+        }, { merge: true });
+      }
+    }
+  }, [now, shiftStatus, startTime, pausedSeconds, user]);
+
   useEffect(() => {
     localStorage.setItem('luxe_user', JSON.stringify(user));
   }, [user]);
@@ -78,31 +107,9 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('luxe_shift_status', shiftStatus);
     if (startTime) localStorage.setItem('luxe_start_time', startTime);
+    else localStorage.removeItem('luxe_start_time');
     localStorage.setItem('luxe_paused_sec', pausedSeconds);
   }, [shiftStatus, startTime, pausedSeconds]);
-
-  // Абсолютный расчет времени по часам (не зависит от закрытия вкладки)
-  useEffect(() => {
-    let interval;
-    if (shiftStatus === 'working' && startTime) {
-      interval = setInterval(() => {
-        const currentSeconds = pausedSeconds + Math.floor((Date.now() - startTime) / 1000);
-        setTimer(currentSeconds);
-
-        // Отправка в облако для владельца
-        if (user && user.role === 'employee') {
-          db.collection('shifts').doc(user.email.replace(/[@.]/g, '_')).set({
-            name: user.name,
-            email: user.email,
-            status: 'Работает',
-            timer: currentSeconds,
-            updatedAt: Date.now()
-          });
-        }
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [shiftStatus, startTime, pausedSeconds, user]);
 
   const formatTime = (sec) => {
     const h = Math.floor(sec / 3600);
@@ -118,18 +125,28 @@ export default function App() {
   };
 
   const changeShift = async (status) => {
-    const now = Date.now();
+    const currentTime = Date.now();
+    let newStartTime = startTime;
+    let newPausedSeconds = pausedSeconds;
+    let finalTimer = timer;
+
     if (status === 'working') {
       if (shiftStatus !== 'working') {
-        setStartTime(now);
+        newStartTime = currentTime;
+        setStartTime(newStartTime);
       }
     } else if (status === 'break') {
       if (shiftStatus === 'working' && startTime) {
-        const elapsed = pausedSeconds + Math.floor((now - startTime) / 1000);
-        setPausedSeconds(elapsed);
+        newPausedSeconds = pausedSeconds + Math.floor((currentTime - startTime) / 1000);
+        setPausedSeconds(newPausedSeconds);
+        newStartTime = null;
         setStartTime(null);
+        finalTimer = newPausedSeconds;
       }
     } else if (status === 'off') {
+      newPausedSeconds = 0;
+      newStartTime = null;
+      finalTimer = 0;
       setPausedSeconds(0);
       setStartTime(null);
       setTimer(0);
@@ -144,8 +161,10 @@ export default function App() {
         name: user.name,
         email: user.email,
         status: status === 'working' ? 'Работает' : status === 'break' ? 'Обед' : 'Завершил смену',
-        timer: status === 'off' ? 0 : timer,
-        updatedAt: now
+        startTime: newStartTime,
+        pausedSeconds: newPausedSeconds,
+        timer: finalTimer,
+        updatedAt: currentTime
       });
     }
   };
@@ -186,6 +205,15 @@ export default function App() {
       timestamp: Date.now()
     });
     setEmText('');
+  };
+
+  // Расчет живого таймера для панели владельца
+  const getEmployeeLiveTimer = (emp) => {
+    if (emp.status === 'Работает' && emp.startTime) {
+      const paused = emp.pausedSeconds || 0;
+      return paused + Math.floor((now - emp.startTime) / 1000);
+    }
+    return emp.timer || 0;
   };
 
   if (!user) {
@@ -312,14 +340,17 @@ export default function App() {
               <h3 className="font-semibold mb-3 text-amber-400">👷 Статус сотрудников на объектах</h3>
               {activeEmployees.length === 0 ? <p className="text-xs text-slate-500">Нет активных смен</p> : (
                 <div className="space-y-2">
-                  {activeEmployees.map(emp => (
-                    <div key={emp.id} className="bg-slate-900 p-3 rounded-lg flex justify-between items-center text-sm">
-                      <div>
-                        <span className="font-bold text-white">{emp.name}</span> — <span className="text-amber-400">{emp.status}</span>
+                  {activeEmployees.map(emp => {
+                    const liveSec = getEmployeeLiveTimer(emp);
+                    return (
+                      <div key={emp.id} className="bg-slate-900 p-3 rounded-lg flex justify-between items-center text-sm">
+                        <div>
+                          <span className="font-bold text-white">{emp.name}</span> — <span className="text-amber-400">{emp.status}</span>
+                        </div>
+                        <div className="font-mono text-green-400">Время: {formatTime(liveSec)}</div>
                       </div>
-                      <div className="font-mono text-green-400">Время: {formatTime(emp.timer || 0)}</div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
