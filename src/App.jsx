@@ -15,8 +15,6 @@ if (!window.firebase.apps.length) {
 }
 const db = window.firebase.firestore();
 
-const addressCache = {};
-
 export default function App() {
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem('luxe_user');
@@ -42,8 +40,6 @@ export default function App() {
   const [activeEmployees, setActiveEmployees] = useState([]);
   const [shiftHistory, setShiftHistory] = useState([]);
   const [employeesList, setEmployeesList] = useState([]);
-
-  const [addresses, setAddresses] = useState({});
 
   const [matName, setMatName] = useState('');
   const [matQty, setMatQty] = useState('');
@@ -87,45 +83,33 @@ export default function App() {
     };
   }, []);
 
-  // Получение развернутого полного адреса (улица, дом, индекс, город)
-  useEffect(() => {
-    activeEmployees.forEach(async (emp) => {
-      if (emp.lat && emp.lng) {
-        const key = `${emp.lat},${emp.lng}`;
-        if (addressCache[key]) {
-          setAddresses(prev => ({ ...prev, [emp.id]: addressCache[key] }));
-          return;
-        }
-        try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${emp.lat}&lon=${emp.lng}&zoom=18&addressdetails=1`, {
-            headers: { 'Accept-Language': 'ru' }
-          });
-          const data = await res.json();
-          if (data && data.address) {
-            const addr = data.address;
-            const road = addr.road || addr.pedestrian || addr.suburb || '';
-            const house = addr.house_number ? `д. ${addr.house_number}` : '';
-            const postcode = addr.postcode || '';
-            const city = addr.city || addr.town || addr.municipality || addr.county || '';
-            
-            // Собираем полноценный красивый адрес
-            const fullAddr = [road, house, postcode, city].filter(Boolean).join(', ');
-            const finalAddr = fullAddr || data.display_name;
-
-            addressCache[key] = finalAddr;
-            setAddresses(prev => ({ ...prev, [emp.id]: finalAddr }));
-          }
-        } catch (e) {
-          console.log('Geocoding error:', e);
-        }
-      }
-    });
-  }, [activeEmployees]);
-
+  // Автоматическое обновление геопозиции и адреса на стороне сотрудника
   const updateGeoLocation = (currentSeconds, currentStatus) => {
     if (navigator.geolocation && user && user.role === 'employee') {
-      navigator.geolocation.watchPosition(
+      navigator.geolocation.getCurrentPosition(
         async (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          
+          let fullAddr = 'Определяется адрес...';
+          try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, {
+              headers: { 'Accept-Language': 'ru' }
+            });
+            const data = await res.json();
+            if (data && data.address) {
+              const addr = data.address;
+              const road = addr.road || addr.pedestrian || addr.suburb || '';
+              const house = addr.house_number ? `д. ${addr.house_number}` : '';
+              const postcode = addr.postcode || '';
+              const city = addr.city || addr.town || addr.municipality || addr.county || '';
+              
+              fullAddr = [road, house, postcode, city].filter(Boolean).join(', ') || data.display_name;
+            }
+          } catch (e) {
+            console.log('Geocoding error:', e);
+          }
+
           await db.collection('shifts').doc(user.email.replace(/[@.]/g, '_')).set({
             name: user.name,
             email: user.email,
@@ -133,13 +117,14 @@ export default function App() {
             startTime: startTime,
             pausedSeconds: pausedSeconds,
             timer: currentSeconds,
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
+            lat: lat,
+            lng: lng,
+            address: fullAddr,
             updatedAt: Date.now()
           }, { merge: true });
         },
         () => {},
-        { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
+        { enableHighAccuracy: true }
       );
     }
   };
@@ -148,7 +133,11 @@ export default function App() {
     if (shiftStatus === 'working' && startTime) {
       const currentSeconds = pausedSeconds + Math.floor((now - startTime) / 1000);
       setTimer(currentSeconds);
-      updateGeoLocation(currentSeconds, 'Работает');
+      
+      // Обновляем геолокацию и адрес каждые 15 секунд
+      if (now % 15000 < 1000) {
+        updateGeoLocation(currentSeconds, 'Работает');
+      }
     }
   }, [now, shiftStatus, startTime, pausedSeconds, user]);
 
@@ -211,13 +200,13 @@ export default function App() {
       }
       statusText = 'Обед';
     } else if (status === 'off') {
-      // При завершении смены фиксируем текущий адрес в историю
-      let currentShiftAddress = 'Адрес не определен';
+      // Надежно берем адрес прямо из активного документа сотрудника в базе
+      let currentShiftAddress = 'Адрес не указан';
       if (user && user.role === 'employee') {
         const empDocId = user.email.replace(/[@.]/g, '_');
         const activeEmpData = activeEmployees.find(e => e.id === empDocId);
-        if (activeEmpData && addresses[empDocId]) {
-          currentShiftAddress = addresses[empDocId];
+        if (activeEmpData && activeEmpData.address) {
+          currentShiftAddress = activeEmpData.address;
         }
       }
 
@@ -249,31 +238,7 @@ export default function App() {
     setShiftStatus(status);
 
     if (status !== 'off' && user && user.role === 'employee') {
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(async (position) => {
-          await db.collection('shifts').doc(user.email.replace(/[@.]/g, '_')).set({
-            name: user.name,
-            email: user.email,
-            status: statusText,
-            startTime: newStartTime,
-            pausedSeconds: newPausedSeconds,
-            timer: finalTimer,
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-            updatedAt: currentTime
-          });
-        }, async () => {
-          await db.collection('shifts').doc(user.email.replace(/[@.]/g, '_')).set({
-            name: user.name,
-            email: user.email,
-            status: statusText,
-            startTime: newStartTime,
-            pausedSeconds: newPausedSeconds,
-            timer: finalTimer,
-            updatedAt: currentTime
-          });
-        });
-      }
+      updateGeoLocation(finalTimer, statusText);
     }
   };
 
@@ -484,7 +449,6 @@ export default function App() {
                 <div className="space-y-3">
                   {activeEmployees.map(emp => {
                     const liveSec = getEmployeeLiveTimer(emp);
-                    const empAddress = addresses[emp.id];
                     return (
                       <div key={emp.id} className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex flex-col gap-2">
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
@@ -507,7 +471,7 @@ export default function App() {
                               rel="noopener noreferrer"
                               className="text-blue-400 hover:underline font-medium flex items-center gap-1"
                             >
-                              {empAddress || 'Определяем полный адрес...'} (Открыть на карте)
+                              {emp.address || 'Определяем адрес...'} (Открыть на карте)
                             </a>
                           ) : (
                             <span className="text-slate-500">Ожидание геолокации от сотрудника...</span>
