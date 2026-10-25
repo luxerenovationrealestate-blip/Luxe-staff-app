@@ -15,7 +15,6 @@ if (!window.firebase.apps.length) {
 }
 const db = window.firebase.firestore();
 
-// Кэш для адресов, чтобы не делать лишних запросов
 const addressCache = {};
 
 export default function App() {
@@ -44,7 +43,6 @@ export default function App() {
   const [shiftHistory, setShiftHistory] = useState([]);
   const [employeesList, setEmployeesList] = useState([]);
 
-  // Состояние для хранения расшифрованных адресов активных сотрудников
   const [addresses, setAddresses] = useState({});
 
   const [matName, setMatName] = useState('');
@@ -89,7 +87,7 @@ export default function App() {
     };
   }, []);
 
-  // Функция получения читаемого адреса по координатам (Reverse Geocoding)
+  // Получение развернутого полного адреса (улица, дом, индекс, город)
   useEffect(() => {
     activeEmployees.forEach(async (emp) => {
       if (emp.lat && emp.lng) {
@@ -103,12 +101,19 @@ export default function App() {
             headers: { 'Accept-Language': 'ru' }
           });
           const data = await res.json();
-          if (data && data.display_name) {
-            // Сокращаем адрес до основных деталей (улица, дом, город)
-            const addrParts = data.display_name.split(', ');
-            const shortAddr = addrParts.slice(0, 3).join(', ');
-            addressCache[key] = shortAddr;
-            setAddresses(prev => ({ ...prev, [emp.id]: shortAddr }));
+          if (data && data.address) {
+            const addr = data.address;
+            const road = addr.road || addr.pedestrian || addr.suburb || '';
+            const house = addr.house_number ? `д. ${addr.house_number}` : '';
+            const postcode = addr.postcode || '';
+            const city = addr.city || addr.town || addr.municipality || addr.county || '';
+            
+            // Собираем полноценный красивый адрес
+            const fullAddr = [road, house, postcode, city].filter(Boolean).join(', ');
+            const finalAddr = fullAddr || data.display_name;
+
+            addressCache[key] = finalAddr;
+            setAddresses(prev => ({ ...prev, [emp.id]: finalAddr }));
           }
         } catch (e) {
           console.log('Geocoding error:', e);
@@ -206,11 +211,22 @@ export default function App() {
       }
       statusText = 'Обед';
     } else if (status === 'off') {
+      // При завершении смены фиксируем текущий адрес в историю
+      let currentShiftAddress = 'Адрес не определен';
+      if (user && user.role === 'employee') {
+        const empDocId = user.email.replace(/[@.]/g, '_');
+        const activeEmpData = activeEmployees.find(e => e.id === empDocId);
+        if (activeEmpData && addresses[empDocId]) {
+          currentShiftAddress = addresses[empDocId];
+        }
+      }
+
       if (timer > 0 && user && user.role === 'employee') {
         await db.collection('shift_history').add({
           name: user.name,
           email: user.email,
           totalTime: timer,
+          address: currentShiftAddress,
           date: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString(),
           timestamp: currentTime
         });
@@ -482,7 +498,6 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* Блок адреса и ссылки на карту */}
                         <div className="flex items-center gap-2 pt-2 border-t border-slate-800 text-xs">
                           <span className="text-base">📍</span>
                           {emp.lat && emp.lng ? (
@@ -492,7 +507,7 @@ export default function App() {
                               rel="noopener noreferrer"
                               className="text-blue-400 hover:underline font-medium flex items-center gap-1"
                             >
-                              {empAddress || 'Определяем адрес...'} (Открыть на карте)
+                              {empAddress || 'Определяем полный адрес...'} (Открыть на карте)
                             </a>
                           ) : (
                             <span className="text-slate-500">Ожидание геолокации от сотрудника...</span>
@@ -506,18 +521,21 @@ export default function App() {
             </div>
 
             <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
-              <h3 className="font-semibold mb-3 text-amber-400">📊 История отработанного времени</h3>
+              <h3 className="font-semibold mb-3 text-amber-400">📊 История отработанного времени и объектов</h3>
               {shiftHistory.length === 0 ? <p className="text-xs text-slate-500">История смен пока пуста</p> : (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {shiftHistory.map(sh => (
-                    <div key={sh.id} className="bg-slate-900 p-3 rounded-lg flex justify-between items-center text-sm">
+                    <div key={sh.id} className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-sm">
                       <div>
-                        <span className="font-bold text-white">{sh.name}</span>
+                        <div className="font-bold text-white text-base">{sh.name}</div>
                         <div className="text-xs text-slate-400">{sh.date}</div>
+                        <div className="text-xs text-amber-400/90 mt-1 flex items-center gap-1 font-medium">
+                          📍 {sh.address || 'Адрес не указан'}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono text-amber-400 font-bold">{formatTime(sh.totalTime)}</span>
-                        <button onClick={() => deleteItem('shift_history', sh.id)} className="text-xs bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white px-2 py-1 rounded transition">Удалить</button>
+                      <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+                        <span className="font-mono text-amber-400 font-bold text-base">{formatTime(sh.totalTime)}</span>
+                        <button onClick={() => deleteItem('shift_history', sh.id)} className="text-xs bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white px-2.5 py-1.5 rounded-lg transition">Удалить</button>
                       </div>
                     </div>
                   ))}
