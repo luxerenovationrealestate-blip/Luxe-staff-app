@@ -1,19 +1,34 @@
 import React, { useState, useEffect } from 'react';
 
 export default function App() {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() => {
+    const saved = localStorage.getItem('luxe_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+
   const [role, setRole] = useState('employee');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [isRegister, setIsRegister] = useState(false);
 
-  const [shiftStatus, setShiftStatus] = useState('off');
-  const [timer, setTimer] = useState(0);
+  const [shiftStatus, setShiftStatus] = useState(() => localStorage.getItem('luxe_shift') || 'off');
+  const [timer, setTimer] = useState(() => Number(localStorage.getItem('luxe_timer')) || 0);
 
-  const [materials, setMaterials] = useState([]);
-  const [issues, setIssues] = useState([]);
-  const [emergencies, setEmergencies] = useState([]);
+  const [materials, setMaterials] = useState(() => {
+    const saved = localStorage.getItem('luxe_materials');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [issues, setIssues] = useState(() => {
+    const saved = localStorage.getItem('luxe_issues');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [emergencies, setEmergencies] = useState(() => {
+    const saved = localStorage.getItem('luxe_emergencies');
+    return saved ? JSON.parse(saved) : [];
+  });
 
   const [matName, setMatName] = useState('');
   const [matQty, setMatQty] = useState('');
@@ -21,6 +36,31 @@ export default function App() {
   const [emText, setEmText] = useState('');
 
   const companyEmail = 'luxerenovationrealestate@gmail.com';
+
+  // Сохранение данных в память браузера при любых изменениях
+  useEffect(() => {
+    localStorage.setItem('luxe_user', JSON.stringify(user));
+  }, [user]);
+
+  useEffect(() => {
+    localStorage.setItem('luxe_shift', shiftStatus);
+  }, [shiftStatus]);
+
+  useEffect(() => {
+    localStorage.setItem('luxe_timer', timer);
+  }, [timer]);
+
+  useEffect(() => {
+    localStorage.setItem('luxe_materials', JSON.stringify(materials));
+  }, [materials]);
+
+  useEffect(() => {
+    localStorage.setItem('luxe_issues', JSON.stringify(issues));
+  }, [issues]);
+
+  useEffect(() => {
+    localStorage.setItem('luxe_emergencies', JSON.stringify(emergencies));
+  }, [emergencies]);
 
   useEffect(() => {
     let interval;
@@ -209,6 +249,22 @@ export default function App() {
                         <span className="font-bold text-amber-400">{m.user}:</span> {m.name} ({m.qty})
                       </div>
                       <span className="text-xs bg-amber-500/10 text-amber-400 px-2 py-1 rounded border border-amber-500/20">{m.status}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
+              <h3 className="font-semibold mb-3 text-amber-400">💬 Обращения работников</h3>
+              {issues.length === 0 ? <p className="text-xs text-slate-500">Обращений пока нет</p> : (
+                <div className="space-y-2">
+                  {issues.map(i => (
+                    <div key={i.id} className="bg-slate-900 p-3 rounded-lg flex justify-between items-center text-sm">
+                      <div>
+                        <span className="font-bold text-amber-400">{i.user}:</span> {i.text}
+                      </div>
+                      <span className="text-xs bg-blue-500/10 text-blue-400 px-2 py-1 rounded border border-blue-500/20">{i.status}</span>
                     </div>
                   ))}
                 </div>
