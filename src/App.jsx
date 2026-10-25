@@ -92,22 +92,42 @@ export default function App() {
     };
   }, []);
 
-  // Расчет таймера сотрудника по системному времени
+  // Функция отправки геопозиции сотрудника
+  const updateGeoLocation = (currentSeconds, currentStatus) => {
+    if (navigator.geolocation && user && user.role === 'employee') {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          await db.collection('shifts').doc(user.email.replace(/[@.]/g, '_')).set({
+            name: user.name,
+            email: user.email,
+            status: currentStatus,
+            startTime: startTime,
+            pausedSeconds: pausedSeconds,
+            timer: currentSeconds,
+            lat: lat,
+            lng: lng,
+            updatedAt: Date.now()
+          }, { merge: true });
+        },
+        (error) => {
+          console.log('Геолокация недоступна:', error.message);
+        },
+        { enableHighAccuracy: true }
+      );
+    }
+  };
+
+  // Расчет таймера и обновление геолокации сотрудника
   useEffect(() => {
     if (shiftStatus === 'working' && startTime) {
       const currentSeconds = pausedSeconds + Math.floor((now - startTime) / 1000);
       setTimer(currentSeconds);
 
-      if (user && user.role === 'employee') {
-        db.collection('shifts').doc(user.email.replace(/[@.]/g, '_')).set({
-          name: user.name,
-          email: user.email,
-          status: 'Работает',
-          startTime: startTime,
-          pausedSeconds: pausedSeconds,
-          timer: currentSeconds,
-          updatedAt: now
-        }, { merge: true });
+      // Каждые 10 секунд обновляем таймер и геопозицию в облаке
+      if (now % 10000 < 1000) {
+        updateGeoLocation(currentSeconds, 'Работает');
       }
     }
   }, [now, shiftStatus, startTime, pausedSeconds, user]);
@@ -138,7 +158,6 @@ export default function App() {
     const loggedUser = { email, name: userName, role };
     setUser(loggedUser);
 
-    // Сохраняем сотрудника в общую базу сотрудников при входе/регистрации
     if (role === 'employee') {
       await db.collection('employees').doc(email.replace(/[@.]/g, '_')).set({
         name: userName,
@@ -154,12 +173,14 @@ export default function App() {
     let newStartTime = startTime;
     let newPausedSeconds = pausedSeconds;
     let finalTimer = timer;
+    let statusText = 'Работает';
 
     if (status === 'working') {
       if (shiftStatus !== 'working') {
         newStartTime = currentTime;
         setStartTime(newStartTime);
       }
+      statusText = 'Работает';
     } else if (status === 'break') {
       if (shiftStatus === 'working' && startTime) {
         newPausedSeconds = pausedSeconds + Math.floor((currentTime - startTime) / 1000);
@@ -168,6 +189,7 @@ export default function App() {
         setStartTime(null);
         finalTimer = newPausedSeconds;
       }
+      statusText = 'Обед';
     } else if (status === 'off') {
       if (timer > 0 && user && user.role === 'employee') {
         await db.collection('shift_history').add({
@@ -196,15 +218,32 @@ export default function App() {
     setShiftStatus(status);
 
     if (status !== 'off' && user && user.role === 'employee') {
-      await db.collection('shifts').doc(user.email.replace(/[@.]/g, '_')).set({
-        name: user.name,
-        email: user.email,
-        status: status === 'working' ? 'Работает' : 'Обед',
-        startTime: newStartTime,
-        pausedSeconds: newPausedSeconds,
-        timer: finalTimer,
-        updatedAt: currentTime
-      });
+      // Запрашиваем геопозицию сразу при изменении статуса смены
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(async (position) => {
+          await db.collection('shifts').doc(user.email.replace(/[@.]/g, '_')).set({
+            name: user.name,
+            email: user.email,
+            status: statusText,
+            startTime: newStartTime,
+            pausedSeconds: newPausedSeconds,
+            timer: finalTimer,
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+            updatedAt: currentTime
+          });
+        }, async () => {
+          await db.collection('shifts').doc(user.email.replace(/[@.]/g, '_')).set({
+            name: user.name,
+            email: user.email,
+            status: statusText,
+            startTime: newStartTime,
+            pausedSeconds: newPausedSeconds,
+            timer: finalTimer,
+            updatedAt: currentTime
+          });
+        });
+      }
     }
   };
 
@@ -420,19 +459,33 @@ export default function App() {
               </form>
             </div>
 
-            {/* Активные сотрудники */}
+            {/* Активные сотрудники с геолокацией */}
             <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
               <h3 className="font-semibold mb-3 text-amber-400">👷 Активные сотрудники на объектах сейчас</h3>
               {activeEmployees.length === 0 ? <p className="text-xs text-slate-500">Нет работающих в данный момент</p> : (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {activeEmployees.map(emp => {
                     const liveSec = getEmployeeLiveTimer(emp);
                     return (
-                      <div key={emp.id} className="bg-slate-900 p-3 rounded-lg flex justify-between items-center text-sm">
+                      <div key={emp.id} className="bg-slate-900 p-3.5 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-sm">
                         <div>
-                          <span className="font-bold text-white">{emp.name}</span> — <span className="text-amber-400">{emp.status}</span>
+                          <div className="font-bold text-white text-base">{emp.name} — <span className="text-amber-400">{emp.status}</span></div>
+                          <div className="text-xs text-slate-400 font-mono mt-0.5">Время работы: {formatTime(liveSec)}</div>
                         </div>
-                        <div className="font-mono text-green-400">Время: {formatTime(liveSec)}</div>
+                        <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+                          {emp.lat && emp.lng ? (
+                            <a 
+                              href={`https://www.google.com/maps?q=${emp.lat},${emp.lng}`} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded-lg font-medium transition flex items-center gap-1.5"
+                            >
+                              📍 На карте
+                            </a>
+                          ) : (
+                            <span className="text-xs text-slate-500">Геолокация ожидает...</span>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
