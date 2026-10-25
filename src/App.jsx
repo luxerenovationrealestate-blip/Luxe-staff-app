@@ -15,12 +15,15 @@ if (!window.firebase.apps.length) {
 }
 const db = window.firebase.firestore();
 
-// Функция отправки уведомления в ваш Telegram-бот
+// Прямая отправка уведомления в Telegram через изображение (надежный обход CORS)
 const sendTelegram = (text) => {
   const token = "8800256505:AAGJqsVJt87EZuSYQDmZDZG2hAHVZe2fbHo";
   const chatId = "8669097831";
-  fetch(`https://api.telegram.org/bot${token}/sendMessage?chat_id=${chatId}&text=${encodeURIComponent(text)}`)
-    .catch(err => console.log('Telegram send error:', err));
+  const url = `https://api.telegram.org/bot${token}/sendMessage?chat_id=${chatId}&text=${encodeURIComponent(text)}`;
+  
+  // Отправляем запрос незаметным методом
+  const img = new Image();
+  img.src = url;
 };
 
 export default function App() {
@@ -171,9 +174,8 @@ export default function App() {
       if (shiftStatus !== 'working') {
         newStartTime = currentTime;
         setStartTime(newStartTime);
-        // Уведомление в Telegram о начале смены
         if (user) {
-          sendTelegram(`🟢 Сотрудник *${user.name}* начал работу (Старт смены).`);
+          sendTelegram(`🟢 Сотрудник ${user.name} начал работу (Старт смены).`);
         }
       }
       statusText = 'Работает';
@@ -196,7 +198,7 @@ export default function App() {
           timestamp: currentTime
         });
         if (user) {
-          sendTelegram(`🔴 Сотрудник *${user.name}* закончил смену. Отработано: ${formatTime(timer)}.`);
+          sendTelegram(`🔴 Сотрудник ${user.name} закончил смену. Отработано: ${formatTime(timer)}.`);
         }
       }
 
@@ -255,7 +257,7 @@ export default function App() {
       status: user.role === 'owner' ? 'Заказано' : 'В обработке',
       timestamp: Date.now()
     });
-    sendTelegram(`📦 Заказ материалов от *${user.name}*:\n• ${matName} (${matQty || 'без кол-ва'})`);
+    sendTelegram(`📦 Заказ материалов от ${user.name}:\n• ${matName} (${matQty || 'без кол-ва'})`);
     setMatName('');
     setMatQty('');
   };
@@ -269,7 +271,7 @@ export default function App() {
       status: 'Открыто',
       timestamp: Date.now()
     });
-    sendTelegram(`💬 Новое обращение от *${user.name}*:\n${issueText}`);
+    sendTelegram(`💬 Новое обращение от ${user.name}:\n${issueText}`);
     setIssueText('');
   };
 
@@ -282,7 +284,7 @@ export default function App() {
       time: new Date().toLocaleTimeString(),
       timestamp: Date.now()
     });
-    sendTelegram(`🚨 ЧП / Форс-мажор от *${user.name}*:\n${emText}`);
+    sendTelegram(`🚨 ЧП / Форс-мажор от ${user.name}:\n${emText}`);
     setEmText('');
   };
 
