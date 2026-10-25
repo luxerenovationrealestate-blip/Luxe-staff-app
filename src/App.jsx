@@ -1,4 +1,19 @@
 import React, { useState, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, addDoc, onSnapshot, query, doc, setDoc } from 'firebase/firestore';
+
+// Ваши персональные ключи Firebase
+const firebaseConfig = {
+  apiKey: "AIzaSyD6wwP7nh0sq_7xe3d8Zv62R_KrwJtghH0",
+  authDomain: "luxe-renovation-72e1a.firebaseapp.com",
+  projectId: "luxe-renovation-72e1a",
+  storageBucket: "luxe-renovation-72e1a.firebasestorage.app",
+  messagingSenderId: "768348735399",
+  appId: "1:768348735399:web:e42045b5232caa5189d882"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
 export default function App() {
   const [user, setUser] = useState(() => {
@@ -12,23 +27,13 @@ export default function App() {
   const [name, setName] = useState('');
   const [isRegister, setIsRegister] = useState(false);
 
-  const [shiftStatus, setShiftStatus] = useState(() => localStorage.getItem('luxe_shift') || 'off');
-  const [timer, setTimer] = useState(() => Number(localStorage.getItem('luxe_timer')) || 0);
+  const [shiftStatus, setShiftStatus] = useState('off');
+  const [timer, setTimer] = useState(0);
 
-  const [materials, setMaterials] = useState(() => {
-    const saved = localStorage.getItem('luxe_materials');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [issues, setIssues] = useState(() => {
-    const saved = localStorage.getItem('luxe_issues');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [emergencies, setEmergencies] = useState(() => {
-    const saved = localStorage.getItem('luxe_emergencies');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [materials, setMaterials] = useState([]);
+  const [issues, setIssues] = useState([]);
+  const [emergencies, setEmergencies] = useState([]);
+  const [activeEmployees, setActiveEmployees] = useState([]);
 
   const [matName, setMatName] = useState('');
   const [matQty, setMatQty] = useState('');
@@ -37,38 +42,59 @@ export default function App() {
 
   const companyEmail = 'luxerenovationrealestate@gmail.com';
 
-  // Сохранение данных в память браузера при любых изменениях
+  // Синхронизация всех данных из облака в реальном времени
+  useEffect(() => {
+    const unsubMaterials = onSnapshot(query(collection(db, 'materials')), (snapshot) => {
+      setMaterials(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    const unsubIssues = onSnapshot(query(collection(db, 'issues')), (snapshot) => {
+      setIssues(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    const unsubEmergencies = onSnapshot(query(collection(db, 'emergencies')), (snapshot) => {
+      setEmergencies(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    const unsubShifts = onSnapshot(query(collection(db, 'shifts')), (snapshot) => {
+      setActiveEmployees(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    return () => {
+      unsubMaterials();
+      unsubIssues();
+      unsubEmergencies();
+      unsubShifts();
+    };
+  }, []);
+
+  // Сохранение пользователя локально
   useEffect(() => {
     localStorage.setItem('luxe_user', JSON.stringify(user));
   }, [user]);
 
-  useEffect(() => {
-    localStorage.setItem('luxe_shift', shiftStatus);
-  }, [shiftStatus]);
-
-  useEffect(() => {
-    localStorage.setItem('luxe_timer', timer);
-  }, [timer]);
-
-  useEffect(() => {
-    localStorage.setItem('luxe_materials', JSON.stringify(materials));
-  }, [materials]);
-
-  useEffect(() => {
-    localStorage.setItem('luxe_issues', JSON.stringify(issues));
-  }, [issues]);
-
-  useEffect(() => {
-    localStorage.setItem('luxe_emergencies', JSON.stringify(emergencies));
-  }, [emergencies]);
-
+  // Таймер смены
   useEffect(() => {
     let interval;
     if (shiftStatus === 'working') {
-      interval = setInterval(() => setTimer(t => t + 1), 1000);
+      interval = setInterval(() => {
+        setTimer(t => {
+          const newTime = t + 1;
+          if (user && user.role === 'employee') {
+            setDoc(doc(db, 'shifts', user.email.replace(/[@.]/g, '_')), {
+              name: user.name,
+              email: user.email,
+              status: 'Работает',
+              timer: newTime,
+              updatedAt: Date.now()
+            });
+          }
+          return newTime;
+        });
+      }, 1000);
     }
     return () => clearInterval(interval);
-  }, [shiftStatus]);
+  }, [shiftStatus, user]);
 
   const formatTime = (sec) => {
     const h = Math.floor(sec / 3600);
@@ -83,25 +109,54 @@ export default function App() {
     setUser({ email, name: name || email.split('@')[0], role });
   };
 
-  const addMaterial = (e) => {
+  const changeShift = async (status) => {
+    setShiftStatus(status);
+    if (user && user.role === 'employee') {
+      await setDoc(doc(db, 'shifts', user.email.replace(/[@.]/g, '_')), {
+        name: user.name,
+        email: user.email,
+        status: status === 'working' ? 'Работает' : status === 'break' ? 'Обед' : 'Завершил смену',
+        timer: timer,
+        updatedAt: Date.now()
+      });
+    }
+  };
+
+  const addMaterial = async (e) => {
     e.preventDefault();
     if (!matName) return;
-    setMaterials([...materials, { id: Date.now(), user: user.name, name: matName, qty: matQty, status: 'В обработке' }]);
+    await addDoc(collection(db, 'materials'), {
+      user: user.name,
+      name: matName,
+      qty: matQty,
+      status: 'В обработке',
+      timestamp: Date.now()
+    });
     setMatName('');
     setMatQty('');
   };
 
-  const addIssue = (e) => {
+  const addIssue = async (e) => {
     e.preventDefault();
     if (!issueText) return;
-    setIssues([...issues, { id: Date.now(), user: user.name, text: issueText, status: 'Открыто' }]);
+    await addDoc(collection(db, 'issues'), {
+      user: user.name,
+      text: issueText,
+      status: 'Открыто',
+      timestamp: Date.now()
+    });
     setIssueText('');
   };
 
-  const addEmergency = (e) => {
+  const addEmergency = async (e) => {
     e.preventDefault();
     if (!emText) return;
-    setEmergencies([...emergencies, { id: Date.now(), user: user.name, text: emText, time: new Date().toLocaleTimeString() }]);
+    await addDoc(collection(db, 'emergencies'), {
+      user: user.name,
+      text: emText,
+      time: new Date().toLocaleTimeString(),
+      timestamp: Date.now()
+    });
     setEmText('');
   };
 
@@ -170,9 +225,9 @@ export default function App() {
             <div className="bg-slate-800 border border-slate-700 p-6 rounded-2xl text-center">
               <div className="text-4xl font-mono font-bold mb-4 text-amber-500">{formatTime(timer)}</div>
               <div className="grid grid-cols-3 gap-3 max-w-md mx-auto">
-                <button onClick={() => setShiftStatus('working')} className={`p-3 rounded-xl font-medium ${shiftStatus === 'working' ? 'bg-green-600 text-white' : 'bg-slate-700 hover:bg-slate-600'}`}>Старт</button>
-                <button onClick={() => setShiftStatus('break')} className={`p-3 rounded-xl font-medium ${shiftStatus === 'break' ? 'bg-yellow-600 text-white' : 'bg-slate-700 hover:bg-slate-600'}`}>Обед</button>
-                <button onClick={() => setShiftStatus('off')} className="p-3 bg-red-600 hover:bg-red-700 rounded-xl font-medium">Конец</button>
+                <button onClick={() => changeShift('working')} className={`p-3 rounded-xl font-medium ${shiftStatus === 'working' ? 'bg-green-600 text-white' : 'bg-slate-700 hover:bg-slate-600'}`}>Старт</button>
+                <button onClick={() => changeShift('break')} className={`p-3 rounded-xl font-medium ${shiftStatus === 'break' ? 'bg-yellow-600 text-white' : 'bg-slate-700 hover:bg-slate-600'}`}>Обед</button>
+                <button onClick={() => changeShift('off')} className="p-3 bg-red-600 hover:bg-red-700 rounded-xl font-medium">Конец</button>
               </div>
             </div>
 
@@ -223,6 +278,22 @@ export default function App() {
                   <div className="text-xs text-slate-400">Форс-мажоров</div>
                 </div>
               </div>
+            </div>
+
+            <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
+              <h3 className="font-semibold mb-3 text-amber-400">👷 Статус сотрудников на объектах</h3>
+              {activeEmployees.length === 0 ? <p className="text-xs text-slate-500">Нет активных смен</p> : (
+                <div className="space-y-2">
+                  {activeEmployees.map(emp => (
+                    <div key={emp.id} className="bg-slate-900 p-3 rounded-lg flex justify-between items-center text-sm">
+                      <div>
+                        <span className="font-bold text-white">{emp.name}</span> — <span className="text-amber-400">{emp.status}</span>
+                      </div>
+                      <div className="font-mono text-green-400">Время: {formatTime(emp.timer || 0)}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {emergencies.length > 0 && (
