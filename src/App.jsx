@@ -40,6 +40,7 @@ export default function App() {
   const [emergencies, setEmergencies] = useState([]);
   const [activeEmployees, setActiveEmployees] = useState([]);
   const [shiftHistory, setShiftHistory] = useState([]);
+  const [employeesList, setEmployeesList] = useState([]);
 
   // Поля ввода
   const [matName, setMatName] = useState('');
@@ -77,12 +78,17 @@ export default function App() {
       setShiftHistory(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
+    const unsubEmployees = db.collection('employees').onSnapshot((snapshot) => {
+      setEmployeesList(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
     return () => {
       unsubMaterials();
       unsubIssues();
       unsubEmergencies();
       unsubShifts();
       unsubHistory();
+      unsubEmployees();
     };
   }, []);
 
@@ -124,10 +130,23 @@ export default function App() {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const handleAuth = (e) => {
+  const handleAuth = async (e) => {
     e.preventDefault();
     if (!email || !password) return alert('Заполните данные!');
-    setUser({ email, name: name || email.split('@')[0], role });
+    
+    const userName = name || email.split('@')[0];
+    const loggedUser = { email, name: userName, role };
+    setUser(loggedUser);
+
+    // Сохраняем сотрудника в общую базу сотрудников при входе/регистрации
+    if (role === 'employee') {
+      await db.collection('employees').doc(email.replace(/[@.]/g, '_')).set({
+        name: userName,
+        email: email,
+        role: 'employee',
+        lastLogin: Date.now()
+      }, { merge: true });
+    }
   };
 
   const changeShift = async (status) => {
@@ -353,7 +372,11 @@ export default function App() {
           <div className="space-y-6">
             <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700">
               <h2 className="text-xl font-bold mb-4 text-amber-500">Панель Управления Владельца</h2>
-              <div className="grid grid-cols-3 gap-4 text-center">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+                <div className="bg-slate-900 p-4 rounded-xl border border-slate-700">
+                  <div className="text-2xl font-bold text-amber-400">{employeesList.length}</div>
+                  <div className="text-xs text-slate-400">Всего сотрудников</div>
+                </div>
                 <div className="bg-slate-900 p-4 rounded-xl border border-slate-700">
                   <div className="text-2xl font-bold">{materials.length}</div>
                   <div className="text-xs text-slate-400">Заказов материалов</div>
@@ -367,6 +390,24 @@ export default function App() {
                   <div className="text-xs text-slate-400">Форс-мажоров</div>
                 </div>
               </div>
+            </div>
+
+            {/* База сотрудников компании */}
+            <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
+              <h3 className="font-semibold mb-3 text-amber-400">📇 База сотрудников компании ({employeesList.length})</h3>
+              {employeesList.length === 0 ? <p className="text-xs text-slate-500">В базе пока нет зарегистрированных сотрудников</p> : (
+                <div className="space-y-2">
+                  {employeesList.map(emp => (
+                    <div key={emp.id} className="bg-slate-900 p-3 rounded-lg flex justify-between items-center text-sm">
+                      <div>
+                        <span className="font-bold text-white">{emp.name}</span>
+                        <div className="text-xs text-slate-400">{emp.email}</div>
+                      </div>
+                      <button onClick={() => deleteItem('employees', emp.id)} className="text-xs bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white px-2.5 py-1 rounded transition">Удалить из базы</button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Владелец заказывает материалы сам */}
