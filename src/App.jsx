@@ -227,7 +227,6 @@ export default function App() {
     setEmText('');
   };
 
-  // Функции удаления и изменения статусов
   const deleteItem = async (col, id) => {
     if (confirm('Вы уверены, что хотите удалить эту запись?')) {
       await db.collection(col).doc(id).delete();
@@ -470,4 +469,34 @@ export default function App() {
 
             {/* Обращения работников с изменением статуса и удалением */}
             <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
-              <h3 className="font-semibold mb-3 text-amber-40
+              <h3 className="font-semibold mb-3 text-amber-400">💬 Обращения работников (Управление)</h3>
+              {issues.length === 0 ? <p className="text-xs text-slate-500">Обращений пока нет</p> : (
+                <div className="space-y-3">
+                  {issues.map(i => (
+                    <div key={i.id} className="bg-slate-900 p-3 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-sm">
+                      <div>
+                        <span className="font-bold text-amber-400">{i.user}:</span> {i.text}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <select 
+                          value={i.status} 
+                          onChange={(e) => updateIssueStatus(i.id, e.target.value)}
+                          className="bg-slate-800 border border-slate-700 text-xs rounded px-2 py-1 text-white"
+                        >
+                          <option value="Открыто">Открыто</option>
+                          <option value="В работе">В работе</option>
+                          <option value="Решено">Решено</option>
+                        </select>
+                        <button onClick={() => deleteItem('issues', i.id)} className="text-xs bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white px-2.5 py-1 rounded transition">Удалить</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
