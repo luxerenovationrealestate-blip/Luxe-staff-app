@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-// Конфигурация Firebase
+// Конфигурация Firebase через глобальный объект window.firebase
 const firebaseConfig = {
   apiKey: "AIzaSyD6wwP7nh0sq_7xe3d8Zv62R_KrwJtghH0",
   authDomain: "luxe-renovation-72e1a.firebaseapp.com",
@@ -10,21 +10,11 @@ const firebaseConfig = {
   appId: "1:768348735399:web:e42045b5232caa5189d882"
 };
 
+// Инициализация Firebase
 if (!window.firebase.apps.length) {
   window.firebase.initializeApp(firebaseConfig);
 }
 const db = window.firebase.firestore();
-
-// Прямая отправка уведомления в Telegram через изображение (надежный обход CORS)
-const sendTelegram = (text) => {
-  const token = "8800256505:AAGJqsVJt87EZuSYQDmZDZG2hAHVZe2fbHo";
-  const chatId = "8669097831";
-  const url = `https://api.telegram.org/bot${token}/sendMessage?chat_id=${chatId}&text=${encodeURIComponent(text)}`;
-  
-  // Отправляем запрос незаметным методом
-  const img = new Image();
-  img.src = url;
-};
 
 export default function App() {
   const [user, setUser] = useState(() => {
@@ -52,6 +42,7 @@ export default function App() {
   const [shiftHistory, setShiftHistory] = useState([]);
   const [employeesList, setEmployeesList] = useState([]);
 
+  // Поля ввода
   const [matName, setMatName] = useState('');
   const [matQty, setMatQty] = useState('');
   const [issueText, setIssueText] = useState('');
@@ -59,27 +50,34 @@ export default function App() {
 
   const companyEmail = 'luxerenovationrealestate@gmail.com';
 
+  // Обновляем текущую секунду для живого таймера
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
   }, []);
 
+  // Синхронизация данных из облака в реальном времени
   useEffect(() => {
     const unsubMaterials = db.collection('materials').onSnapshot((snapshot) => {
       setMaterials(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
+
     const unsubIssues = db.collection('issues').onSnapshot((snapshot) => {
       setIssues(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
+
     const unsubEmergencies = db.collection('emergencies').onSnapshot((snapshot) => {
       setEmergencies(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
+
     const unsubShifts = db.collection('shifts').onSnapshot((snapshot) => {
       setActiveEmployees(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
+
     const unsubHistory = db.collection('shift_history').orderBy('timestamp', 'desc').onSnapshot((snapshot) => {
       setShiftHistory(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
+
     const unsubEmployees = db.collection('employees').onSnapshot((snapshot) => {
       setEmployeesList(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
@@ -94,10 +92,13 @@ export default function App() {
     };
   }, []);
 
+  // Функция отправки геопозиции сотрудника
   const updateGeoLocation = (currentSeconds, currentStatus) => {
     if (navigator.geolocation && user && user.role === 'employee') {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
           await db.collection('shifts').doc(user.email.replace(/[@.]/g, '_')).set({
             name: user.name,
             email: user.email,
@@ -105,22 +106,26 @@ export default function App() {
             startTime: startTime,
             pausedSeconds: pausedSeconds,
             timer: currentSeconds,
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
+            lat: lat,
+            lng: lng,
             updatedAt: Date.now()
           }, { merge: true });
         },
-        () => {},
+        (error) => {
+          console.log('Геолокация недоступна:', error.message);
+        },
         { enableHighAccuracy: true }
       );
     }
   };
 
+  // Расчет таймера и обновление геолокации сотрудника
   useEffect(() => {
     if (shiftStatus === 'working' && startTime) {
       const currentSeconds = pausedSeconds + Math.floor((now - startTime) / 1000);
       setTimer(currentSeconds);
 
+      // Каждые 10 секунд обновляем таймер и геопозицию в облаке
       if (now % 10000 < 1000) {
         updateGeoLocation(currentSeconds, 'Работает');
       }
@@ -174,9 +179,6 @@ export default function App() {
       if (shiftStatus !== 'working') {
         newStartTime = currentTime;
         setStartTime(newStartTime);
-        if (user) {
-          sendTelegram(`🟢 Сотрудник ${user.name} начал работу (Старт смены).`);
-        }
       }
       statusText = 'Работает';
     } else if (status === 'break') {
@@ -197,9 +199,6 @@ export default function App() {
           date: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString(),
           timestamp: currentTime
         });
-        if (user) {
-          sendTelegram(`🔴 Сотрудник ${user.name} закончил смену. Отработано: ${formatTime(timer)}.`);
-        }
       }
 
       newPausedSeconds = 0;
@@ -219,6 +218,7 @@ export default function App() {
     setShiftStatus(status);
 
     if (status !== 'off' && user && user.role === 'employee') {
+      // Запрашиваем геопозицию сразу при изменении статуса смены
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(async (position) => {
           await db.collection('shifts').doc(user.email.replace(/[@.]/g, '_')).set({
@@ -257,7 +257,6 @@ export default function App() {
       status: user.role === 'owner' ? 'Заказано' : 'В обработке',
       timestamp: Date.now()
     });
-    sendTelegram(`📦 Заказ материалов от ${user.name}:\n• ${matName} (${matQty || 'без кол-ва'})`);
     setMatName('');
     setMatQty('');
   };
@@ -271,7 +270,6 @@ export default function App() {
       status: 'Открыто',
       timestamp: Date.now()
     });
-    sendTelegram(`💬 Новое обращение от ${user.name}:\n${issueText}`);
     setIssueText('');
   };
 
@@ -284,12 +282,11 @@ export default function App() {
       time: new Date().toLocaleTimeString(),
       timestamp: Date.now()
     });
-    sendTelegram(`🚨 ЧП / Форс-мажор от ${user.name}:\n${emText}`);
     setEmText('');
   };
 
   const deleteItem = async (col, id) => {
-    if (confirm('Удалить эту запись?')) {
+    if (confirm('Вы уверены, что хотите удалить эту запись?')) {
       await db.collection(col).doc(id).delete();
     }
   };
@@ -434,9 +431,10 @@ export default function App() {
               </div>
             </div>
 
+            {/* База сотрудников компании */}
             <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
               <h3 className="font-semibold mb-3 text-amber-400">📇 База сотрудников компании ({employeesList.length})</h3>
-              {employeesList.length === 0 ? <p className="text-xs text-slate-500">В базе пока нет сотрудников</p> : (
+              {employeesList.length === 0 ? <p className="text-xs text-slate-500">В базе пока нет зарегистрированных сотрудников</p> : (
                 <div className="space-y-2">
                   {employeesList.map(emp => (
                     <div key={emp.id} className="bg-slate-900 p-3 rounded-lg flex justify-between items-center text-sm">
@@ -444,13 +442,24 @@ export default function App() {
                         <span className="font-bold text-white">{emp.name}</span>
                         <div className="text-xs text-slate-400">{emp.email}</div>
                       </div>
-                      <button onClick={() => deleteItem('employees', emp.id)} className="text-xs bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white px-2.5 py-1 rounded transition">Удалить</button>
+                      <button onClick={() => deleteItem('employees', emp.id)} className="text-xs bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white px-2.5 py-1 rounded transition">Удалить из базы</button>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
+            {/* Владелец заказывает материалы сам */}
+            <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
+              <h3 className="font-semibold mb-3 text-amber-400">➕ Добавить заказ материалов от компании</h3>
+              <form onSubmit={addMaterial} className="flex flex-col md:flex-row gap-3">
+                <input type="text" placeholder="Название материала" value={matName} onChange={e => setMatName(e.target.value)} className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white" />
+                <input type="text" placeholder="Количество" value={matQty} onChange={e => setMatQty(e.target.value)} className="w-full md:w-36 bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white" />
+                <button type="submit" className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-5 py-2 rounded-lg text-sm">Добавить</button>
+              </form>
+            </div>
+
+            {/* Активные сотрудники с геолокацией */}
             <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
               <h3 className="font-semibold mb-3 text-amber-400">👷 Активные сотрудники на объектах сейчас</h3>
               {activeEmployees.length === 0 ? <p className="text-xs text-slate-500">Нет работающих в данный момент</p> : (
@@ -474,7 +483,7 @@ export default function App() {
                               📍 На карте
                             </a>
                           ) : (
-                            <span className="text-xs text-slate-500">Ожидание геолокации...</span>
+                            <span className="text-xs text-slate-500">Геолокация ожидает...</span>
                           )}
                         </div>
                       </div>
@@ -484,6 +493,7 @@ export default function App() {
               )}
             </div>
 
+            {/* История отработанного времени с возможностью удаления */}
             <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
               <h3 className="font-semibold mb-3 text-amber-400">📊 История отработанного времени</h3>
               {shiftHistory.length === 0 ? <p className="text-xs text-slate-500">История смен пока пуста</p> : (
@@ -504,6 +514,7 @@ export default function App() {
               )}
             </div>
 
+            {/* Форс-мажоры с кнопкой удаления */}
             {emergencies.length > 0 && (
               <div className="bg-red-950/40 border border-red-500/50 p-5 rounded-2xl">
                 <h3 className="font-semibold text-red-400 mb-3">🚨 Экстренные сообщения</h3>
@@ -521,6 +532,7 @@ export default function App() {
               </div>
             )}
 
+            {/* Заказы материалов с изменением статуса и удалением */}
             <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
               <h3 className="font-semibold mb-3 text-amber-400">📦 Заказы материалов (Управление)</h3>
               {materials.length === 0 ? <p className="text-xs text-slate-500">Заказов пока нет</p> : (
@@ -549,6 +561,7 @@ export default function App() {
               )}
             </div>
 
+            {/* Обращения работников с изменением статуса и удалением */}
             <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
               <h3 className="font-semibold mb-3 text-amber-400">💬 Обращения работников (Управление)</h3>
               {issues.length === 0 ? <p className="text-xs text-slate-500">Обращений пока нет</p> : (
