@@ -28,7 +28,9 @@ export default function App() {
   const [name, setName] = useState('');
   const [isRegister, setIsRegister] = useState(false);
 
-  const [shiftStatus, setShiftStatus] = useState('off');
+  const [shiftStatus, setShiftStatus] = useState(() => localStorage.getItem('luxe_shift_status') || 'off');
+  const [startTime, setStartTime] = useState(() => Number(localStorage.getItem('luxe_start_time')) || null);
+  const [pausedSeconds, setPausedSeconds] = useState(() => Number(localStorage.getItem('luxe_paused_sec')) || 0);
   const [timer, setTimer] = useState(0);
 
   const [materials, setMaterials] = useState([]);
@@ -73,28 +75,34 @@ export default function App() {
     localStorage.setItem('luxe_user', JSON.stringify(user));
   }, [user]);
 
-  // Таймер смены
+  useEffect(() => {
+    localStorage.setItem('luxe_shift_status', shiftStatus);
+    if (startTime) localStorage.setItem('luxe_start_time', startTime);
+    localStorage.setItem('luxe_paused_sec', pausedSeconds);
+  }, [shiftStatus, startTime, pausedSeconds]);
+
+  // Абсолютный расчет времени по часам (не зависит от закрытия вкладки)
   useEffect(() => {
     let interval;
-    if (shiftStatus === 'working') {
+    if (shiftStatus === 'working' && startTime) {
       interval = setInterval(() => {
-        setTimer(t => {
-          const newTime = t + 1;
-          if (user && user.role === 'employee') {
-            db.collection('shifts').doc(user.email.replace(/[@.]/g, '_')).set({
-              name: user.name,
-              email: user.email,
-              status: 'Работает',
-              timer: newTime,
-              updatedAt: Date.now()
-            });
-          }
-          return newTime;
-        });
+        const currentSeconds = pausedSeconds + Math.floor((Date.now() - startTime) / 1000);
+        setTimer(currentSeconds);
+
+        // Отправка в облако для владельца
+        if (user && user.role === 'employee') {
+          db.collection('shifts').doc(user.email.replace(/[@.]/g, '_')).set({
+            name: user.name,
+            email: user.email,
+            status: 'Работает',
+            timer: currentSeconds,
+            updatedAt: Date.now()
+          });
+        }
       }, 1000);
     }
     return () => clearInterval(interval);
-  }, [shiftStatus, user]);
+  }, [shiftStatus, startTime, pausedSeconds, user]);
 
   const formatTime = (sec) => {
     const h = Math.floor(sec / 3600);
@@ -110,14 +118,34 @@ export default function App() {
   };
 
   const changeShift = async (status) => {
+    const now = Date.now();
+    if (status === 'working') {
+      if (shiftStatus !== 'working') {
+        setStartTime(now);
+      }
+    } else if (status === 'break') {
+      if (shiftStatus === 'working' && startTime) {
+        const elapsed = pausedSeconds + Math.floor((now - startTime) / 1000);
+        setPausedSeconds(elapsed);
+        setStartTime(null);
+      }
+    } else if (status === 'off') {
+      setPausedSeconds(0);
+      setStartTime(null);
+      setTimer(0);
+      localStorage.removeItem('luxe_start_time');
+      localStorage.removeItem('luxe_paused_sec');
+    }
+
     setShiftStatus(status);
+
     if (user && user.role === 'employee') {
       await db.collection('shifts').doc(user.email.replace(/[@.]/g, '_')).set({
         name: user.name,
         email: user.email,
         status: status === 'working' ? 'Работает' : status === 'break' ? 'Обед' : 'Завершил смену',
-        timer: timer,
-        updatedAt: Date.now()
+        timer: status === 'off' ? 0 : timer,
+        updatedAt: now
       });
     }
   };
