@@ -21,7 +21,6 @@ export default function App() {
     return saved ? JSON.parse(saved) : null;
   });
 
-  const [role, setRole] = useState('employee');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -42,7 +41,8 @@ export default function App() {
   const [employeesList, setEmployeesList] = useState([]);
   const [penalties, setPenalties] = useState([]);
 
-  // Состояния для модального окна/формы штрафов
+  // Состояния для компактных штрафов
+  const [penaltyOpenEmail, setPenaltyOpenEmail] = useState(null);
   const [penaltyHoursInput, setPenaltyHoursInput] = useState({});
   const [penaltyReasonInput, setPenaltyReasonInput] = useState({});
 
@@ -92,9 +92,8 @@ export default function App() {
     };
   }, []);
 
-  // Функция обновления геолокации и отправки данных в базу
   const updateGeoLocation = async (currentSeconds, currentStatus, activeStartTime, activePausedSec) => {
-    if (navigator.geolocation && user && user.role === 'employee') {
+    if (navigator.geolocation && user && user.email !== companyEmail) {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
           const lat = position.coords.latitude;
@@ -182,7 +181,11 @@ export default function App() {
     e.preventDefault();
     if (!email || !password) return alert('Заполните данные!');
     
+    // Автоматическое определение роли: главный email — владелец, все остальные — сотрудники без выбора
+    const isOwner = email.toLowerCase().trim() === companyEmail.toLowerCase();
+    const role = isOwner ? 'owner' : 'employee';
     const userName = name || email.split('@')[0];
+    
     const loggedUser = { email, name: userName, role };
     setUser(loggedUser);
 
@@ -220,7 +223,7 @@ export default function App() {
       statusText = 'Обед';
     } else if (status === 'off') {
       let currentShiftAddress = 'Адрес не указан';
-      if (user && user.role === 'employee') {
+      if (user && user.email !== companyEmail) {
         const empDocId = user.email.replace(/[@.]/g, '_');
         const activeEmpData = activeEmployees.find(e => e.id === empDocId);
         if (activeEmpData && activeEmpData.address) {
@@ -228,7 +231,7 @@ export default function App() {
         }
       }
 
-      if (timer > 0 && user && user.role === 'employee') {
+      if (timer > 0 && user && user.email !== companyEmail) {
         await db.collection('shift_history').add({
           name: user.name,
           email: user.email,
@@ -248,72 +251,60 @@ export default function App() {
       localStorage.removeItem('luxe_start_time');
       localStorage.removeItem('luxe_paused_sec');
 
-      if (user && user.role === 'employee') {
+      if (user && user.email !== companyEmail) {
         await db.collection('shifts').doc(user.email.replace(/[@.]/g, '_')).delete();
       }
     }
 
     setShiftStatus(status);
 
-    if (status !== 'off' && user && user.role === 'employee') {
+    if (status !== 'off' && user && user.email !== companyEmail) {
       await updateGeoLocation(finalTimer, statusText, newStartTime, newPausedSeconds);
     }
   };
 
-  // Функция принудительного закрытия зависшей смены владельцем
   const forceCloseEmployeeShift = async (emp) => {
-    if (!confirm(`Принудительно закрыть смену для ${emp.name}?`)) return;
-    
+    if (!confirm(`Закрыть смену для ${emp.name}?`)) return;
     try {
-      // Сохраняем в историю смен
       await db.collection('shift_history').add({
         name: emp.name,
         email: emp.email,
         totalTime: emp.timer || 0,
-        address: emp.address || 'Адрес не указан (закрыто владельцем)',
-        date: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString() + ' (Принудительно)',
+        address: emp.address || 'Адрес не указан',
+        date: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString() + ' (Админ)',
         timestamp: Date.now()
       });
-
-      // Удаляем из активных смен
       await db.collection('shifts').doc(emp.id).delete();
-      alert('Смена успешно принудительно закрыта!');
     } catch (error) {
-      console.error('Ошибка принудительного закрытия:', error);
-      alert('Не удалось закрыть смену');
+      console.error(error);
     }
   };
 
-  // Функция добавления штрафа (минус часы) без дублирования (уникальный ID на основе времени/сотрудника)
   const applyPenalty = async (empEmail, empName) => {
-    const hoursToDeduct = parseFloat(penaltyHoursInput[empEmail]);
-    const reason = penaltyReasonInput[empEmail] || 'Штраф / Вычет часов';
+    const hours = parseFloat(penaltyHoursInput[empEmail]);
+    const reason = penaltyReasonInput[empEmail] || 'Нарушение регламента';
 
-    if (!hoursToDeduct || isNaN(hoursToDeduct) || hoursToDeduct <= 0) {
-      alert('Введите корректное количество часов для штрафа!');
+    if (!hours || isNaN(hours) || hours <= 0) {
+      alert('Укажите корректные часы для штрафа');
       return;
     }
 
     const penaltyId = `${empEmail.replace(/[@.]/g, '_')}_${Date.now()}`;
-
     try {
       await db.collection('penalties').doc(penaltyId).set({
         id: penaltyId,
         email: empEmail,
         name: empName,
-        hours: hoursToDeduct,
-        reason: reason,
-        date: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString(),
+        hours,
+        reason,
+        date: new Date().toLocaleDateString(),
         timestamp: Date.now()
       });
-
-      // Сбрасываем поля ввода для этого сотрудника
       setPenaltyHoursInput({ ...penaltyHoursInput, [empEmail]: '' });
       setPenaltyReasonInput({ ...penaltyReasonInput, [empEmail]: '' });
-      alert(`Штраф на ${hoursToDeduct} ч. успешно зафиксирован!`);
-    } catch (error) {
-      console.error('Ошибка добавления штрафа:', error);
-      alert('Ошибка при сохранении штрафа');
+      setPenaltyOpenEmail(null);
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -324,7 +315,7 @@ export default function App() {
       user: user.name,
       name: matName,
       qty: matQty,
-      status: user.role === 'owner' ? 'Заказано' : 'В обработке',
+      status: 'В обработке',
       timestamp: Date.now()
     });
     setMatName('');
@@ -379,46 +370,36 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="flex items-center justify-center min-h-screen p-4 bg-slate-900">
-        <div className="bg-slate-800 p-8 rounded-2xl max-w-md w-full border border-slate-700 shadow-xl text-white">
-          <h1 className="text-2xl font-bold text-amber-500 mb-1 text-center">Luxe Renovation</h1>
-          <p className="text-slate-400 text-xs mb-6 text-center">{companyEmail}</p>
-
-          <div className="flex bg-slate-900 rounded-lg p-1 mb-6">
-            <button type="button" className={`flex-1 py-2 text-sm font-medium rounded-md ${!isRegister ? 'bg-amber-500 text-slate-950' : 'text-slate-400'}`} onClick={() => setIsRegister(false)}>Вход</button>
-            <button type="button" className={`flex-1 py-2 text-sm font-medium rounded-md ${isRegister ? 'bg-amber-500 text-slate-950' : 'text-slate-400'}`} onClick={() => setIsRegister(true)}>Регистрация</button>
+      <div className="flex items-center justify-center min-h-screen p-4 bg-slate-950">
+        <div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl max-w-sm w-full shadow-2xl text-slate-100">
+          <div className="text-center mb-6">
+            <h1 className="text-xl font-bold tracking-wider text-amber-500 uppercase">Luxe Renovation</h1>
+            <p className="text-slate-400 text-xs mt-1">Система управления строительными объектами</p>
           </div>
 
-          <form onSubmit={handleAuth} className="space-y-4">
+          <div className="flex bg-slate-950 p-1 rounded-xl mb-6 border border-slate-800 text-xs font-medium">
+            <button type="button" className={`flex-1 py-2 rounded-lg transition ${!isRegister ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400'}`} onClick={() => setIsRegister(false)}>Вход</button>
+            <button type="button" className={`flex-1 py-2 rounded-lg transition ${isRegister ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400'}`} onClick={() => setIsRegister(true)}>Регистрация</button>
+          </div>
+
+          <form onSubmit={handleAuth} className="space-y-3.5 text-xs">
             {isRegister && (
               <div>
-                <label className="block text-xs text-slate-400 mb-1">ФИО / Имя</label>
-                <input type="text" value={name} onChange={e => setName(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white" placeholder="Иван Иванов" required />
+                <label className="block text-slate-400 mb-1">Имя / Фамилия</label>
+                <input type="text" value={name} onChange={e => setName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:border-amber-500 outline-none" placeholder="Иван" required />
               </div>
             )}
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Email</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white" placeholder="name@example.com" required />
+              <label className="block text-slate-400 mb-1">Электронная почта</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:border-amber-500 outline-none" placeholder="name@example.com" required />
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Пароль</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white" placeholder="••••••••" required />
+              <label className="block text-slate-400 mb-1">Пароль</label>
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:border-amber-500 outline-none" placeholder="••••••••" required />
             </div>
 
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Роль аккаунта</label>
-              <div className="grid grid-cols-2 gap-2">
-                <button type="button" className={`p-3 border rounded-xl text-left ${role === 'employee' ? 'border-amber-500 bg-amber-500/10' : 'border-slate-700'}`} onClick={() => setRole('employee')}>
-                  <div className="font-semibold text-sm">Сотрудник</div>
-                </button>
-                <button type="button" className={`p-3 border rounded-xl text-left ${role === 'owner' ? 'border-amber-500 bg-amber-500/10' : 'border-slate-700'}`} onClick={() => setRole('owner')}>
-                  <div className="font-semibold text-sm">Владелец</div>
-                </button>
-              </div>
-            </div>
-
-            <button type="submit" className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-3 rounded-xl transition">
-              {isRegister ? 'Зарегистрироваться' : 'Войти'}
+            <button type="submit" className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3 rounded-xl transition mt-2 shadow-lg shadow-amber-500/10">
+              {isRegister ? 'Создать аккаунт' : 'Войти в систему'}
             </button>
           </form>
         </div>
@@ -426,187 +407,114 @@ export default function App() {
     );
   }
 
+  const isOwner = user.email.toLowerCase() === companyEmail.toLowerCase();
+
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100">
-      <header className="bg-slate-800 border-b border-slate-700 p-4 flex justify-between items-center">
-        <div>
-          <h1 className="font-bold text-amber-500">Luxe Renovation</h1>
-          <p className="text-xs text-slate-400">{user.name} ({user.role === 'owner' ? 'Владелец' : 'Сотрудник'}) • <a href={`mailto:${companyEmail}`} className="text-amber-400 hover:underline">{companyEmail}</a></p>
+    <div className="min-h-screen bg-slate-950 text-slate-100 antialiased">
+      {/* Премиум шапка */}
+      <header className="bg-slate-900/80 backdrop-blur border-b border-slate-800 px-4 py-3 sticky top-0 z-50 flex justify-between items-center">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-500 font-bold text-sm">LR</div>
+          <div>
+            <h1 className="font-bold text-sm text-slate-100 tracking-wide">Luxe Renovation</h1>
+            <p className="text-[11px] text-slate-400">{user.name} ({isOwner ? 'Владелец' : 'Сотрудник'})</p>
+          </div>
         </div>
-        <button onClick={() => setUser(null)} className="text-xs bg-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-600">Выйти</button>
+        <button onClick={() => setUser(null)} className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 transition">Выйти</button>
       </header>
 
-      <main className="max-w-4xl mx-auto p-4 space-y-6">
-        {user.role === 'employee' ? (
+      <main className="max-w-3xl mx-auto p-4 space-y-4">
+        {!isOwner ? (
           <>
-            <div className="bg-slate-800 border border-slate-700 p-6 rounded-2xl text-center">
-              <div className="text-4xl font-mono font-bold mb-4 text-amber-500">{formatTime(timer)}</div>
-              <div className="grid grid-cols-3 gap-3 max-w-md mx-auto">
-                <button onClick={() => changeShift('working')} className={`p-3 rounded-xl font-medium ${shiftStatus === 'working' ? 'bg-green-600 text-white' : 'bg-slate-700 hover:bg-slate-600'}`}>Старт</button>
-                <button onClick={() => changeShift('break')} className={`p-3 rounded-xl font-medium ${shiftStatus === 'break' ? 'bg-yellow-600 text-white' : 'bg-slate-700 hover:bg-slate-600'}`}>Обед</button>
-                <button onClick={() => changeShift('off')} className="p-3 bg-red-600 hover:bg-red-700 rounded-xl font-medium">Конец</button>
+            {/* Карточка таймера сотрудника */}
+            <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl text-center shadow-xl">
+              <div className="text-xs text-slate-400 uppercase tracking-widest mb-1 font-medium">Отработано времени</div>
+              <div className="text-4xl font-mono font-bold mb-6 text-amber-500 tracking-tight">{formatTime(timer)}</div>
+              <div className="grid grid-cols-3 gap-2 max-w-xs mx-auto">
+                <button onClick={() => changeShift('working')} className={`py-2.5 rounded-xl text-xs font-semibold transition ${shiftStatus === 'working' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}>Старт</button>
+                <button onClick={() => changeShift('break')} className={`py-2.5 rounded-xl text-xs font-semibold transition ${shiftStatus === 'break' ? 'bg-amber-600 text-white shadow-lg shadow-amber-600/20' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}>Обед</button>
+                <button onClick={() => changeShift('off')} className="py-2.5 bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white rounded-xl text-xs font-semibold transition border border-rose-500/30">Финиш</button>
               </div>
             </div>
 
             {shiftStatus !== 'off' && (
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
-                  <h3 className="font-semibold mb-3 text-amber-400">📦 Заказ материалов</h3>
-                  <form onSubmit={addMaterial} className="space-y-3">
-                    <input type="text" placeholder="Название (например: Шпаклевка 25кг)" value={matName} onChange={e => setMatName(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white" />
-                    <input type="text" placeholder="Количество (например: 5 мешков)" value={matQty} onChange={e => setMatQty(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white" />
-                    <button type="submit" className="w-full bg-amber-500 text-slate-950 py-2 rounded-lg font-medium text-sm">Заказать</button>
+              <div className="grid md:grid-cols-2 gap-3">
+                <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800">
+                  <h3 className="text-xs font-semibold mb-2.5 text-amber-500 uppercase tracking-wider">📦 Заказ материалов</h3>
+                  <form onSubmit={addMaterial} className="space-y-2.5 text-xs">
+                    <input type="text" placeholder="Материал (напр. Шпаклевка 25кг)" value={matName} onChange={e => setMatName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white outline-none focus:border-amber-500" />
+                    <input type="text" placeholder="Количество (напр. 5 мешков)" value={matQty} onChange={e => setMatQty(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white outline-none focus:border-amber-500" />
+                    <button type="submit" className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 py-2 rounded-xl font-bold transition">Заказать</button>
                   </form>
                 </div>
 
-                <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
-                  <h3 className="font-semibold mb-3 text-amber-400">💬 Обращение к владельцу</h3>
-                  <form onSubmit={addIssue} className="space-y-3">
-                    <textarea placeholder="Опишите вопрос или проблему на объекте..." value={issueText} onChange={e => setIssueText(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm h-20 text-white"></textarea>
-                    <button type="submit" className="w-full bg-amber-500 text-slate-950 py-2 rounded-lg font-medium text-sm">Отправить</button>
+                <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800">
+                  <h3 className="text-xs font-semibold mb-2.5 text-amber-500 uppercase tracking-wider">💬 Обращение к руководству</h3>
+                  <form onSubmit={addIssue} className="space-y-2.5 text-xs">
+                    <textarea placeholder="Опишите вопрос по объекту..." value={issueText} onChange={e => setIssueText(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white h-[82px] outline-none focus:border-amber-500 resize-none"></textarea>
+                    <button type="submit" className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 py-2 rounded-xl font-bold transition">Отправить</button>
                   </form>
                 </div>
 
-                <div className="bg-slate-800 p-5 rounded-2xl border border-red-500/30 md:col-span-2">
-                  <h3 className="font-semibold mb-3 text-red-400">🚨 Форс-мажор / ЧП</h3>
-                  <form onSubmit={addEmergency} className="flex gap-2">
-                    <input type="text" placeholder="Срочное сообщение про ЧП на объекте..." value={emText} onChange={e => setEmText(e.target.value)} className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white" />
-                    <button type="submit" className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium text-sm">Сообщить</button>
+                <div className="bg-slate-900 p-4 rounded-2xl border border-rose-500/20 md:col-span-2">
+                  <h3 className="text-xs font-semibold mb-2 text-rose-400 uppercase tracking-wider">🚨 Экстренный Форс-мажор</h3>
+                  <form onSubmit={addEmergency} className="flex gap-2 text-xs">
+                    <input type="text" placeholder="Срочное сообщение о ЧП..." value={emText} onChange={e => setEmText(e.target.value)} className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white outline-none focus:border-rose-500" />
+                    <button type="submit" className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-xl font-semibold transition">Сообщить</button>
                   </form>
                 </div>
               </div>
             )}
           </>
         ) : (
-          <div className="space-y-6">
-            <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700">
-              <h2 className="text-xl font-bold mb-4 text-amber-500">Панель Управления Владельца</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
-                <div className="bg-slate-900 p-4 rounded-xl border border-slate-700">
-                  <div className="text-2xl font-bold text-amber-400">{employeesList.length}</div>
-                  <div className="text-xs text-slate-400">Всего сотрудников</div>
+          <div className="space-y-4">
+            {/* Компактная статистика владения */}
+            <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">Сводка компании</h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-center">
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <div className="text-lg font-bold text-amber-500">{employeesList.length}</div>
+                  <div className="text-[10px] text-slate-400 uppercase">Сотрудники</div>
                 </div>
-                <div className="bg-slate-900 p-4 rounded-xl border border-slate-700">
-                  <div className="text-2xl font-bold">{materials.length}</div>
-                  <div className="text-xs text-slate-400">Заказов материалов</div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <div className="text-lg font-bold text-slate-100">{materials.length}</div>
+                  <div className="text-[10px] text-slate-400 uppercase">Материалы</div>
                 </div>
-                <div className="bg-slate-900 p-4 rounded-xl border border-slate-700">
-                  <div className="text-2xl font-bold">{issues.length}</div>
-                  <div className="text-xs text-slate-400">Обращений</div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <div className="text-lg font-bold text-slate-100">{issues.length}</div>
+                  <div className="text-[10px] text-slate-400 uppercase">Обращения</div>
                 </div>
-                <div className="bg-slate-900 p-4 rounded-xl border border-slate-700">
-                  <div className="text-2xl font-bold text-red-500">{emergencies.length}</div>
-                  <div className="text-xs text-slate-400">Форс-мажоров</div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <div className="text-lg font-bold text-rose-500">{emergencies.length}</div>
+                  <div className="text-[10px] text-slate-400 uppercase">ЧП</div>
                 </div>
               </div>
             </div>
 
-            {/* БАЗА СОТРУДНИКОВ И УПРАВЛЕНИЕ ШТРАФАМИ */}
-            <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
-              <h3 className="font-semibold mb-3 text-amber-400">📇 База сотрудников и штрафные санкции ({employeesList.length})</h3>
-              {employeesList.length === 0 ? <p className="text-xs text-slate-500">В базе пока нет сотрудников</p> : (
-                <div className="space-y-4">
-                  {employeesList.map(emp => {
-                    const empPenalties = penalties.filter(p => p.email === emp.email);
-                    return (
-                      <div key={emp.id} className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
-                        <div className="flex justify-between items-center text-sm">
-                          <div>
-                            <span className="font-bold text-white text-base">{emp.name}</span>
-                            <div className="text-xs text-slate-400">{emp.email}</div>
-                          </div>
-                          <button onClick={() => deleteItem('employees', emp.id)} className="text-xs bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white px-2.5 py-1 rounded transition">Удалить из базы</button>
-                        </div>
-
-                        {/* Блок наложения штрафа (минус часы) */}
-                        <div className="bg-slate-800/80 p-3 rounded-lg border border-slate-700 space-y-2">
-                          <div className="text-xs font-semibold text-amber-400">⚖️ Начислить штраф (вычет часов):</div>
-                          <div className="flex flex-col sm:flex-row gap-2">
-                            <input 
-                              type="number" 
-                              step="0.5" 
-                              placeholder="Часы (например: 1)" 
-                              value={penaltyHoursInput[emp.email] || ''} 
-                              onChange={(e) => setPenaltyHoursInput({ ...penaltyHoursInput, [emp.email]: e.target.value })}
-                              className="bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white sm:w-36"
-                            />
-                            <input 
-                              type="text" 
-                              placeholder="Причина штрафа (опционально)" 
-                              value={penaltyReasonInput[emp.email] || ''} 
-                              onChange={(e) => setPenaltyReasonInput({ ...penaltyReasonInput, [emp.email]: e.target.value })}
-                              className="flex-1 bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white"
-                            />
-                            <button 
-                              onClick={() => applyPenalty(emp.email, emp.name)}
-                              className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded text-xs font-medium transition"
-                            >
-                              Штрафовать
-                            </button>
-                          </div>
-
-                          {/* Список штрафов сотрудника */}
-                          {empPenalties.length > 0 && (
-                            <div className="mt-2 pt-2 border-t border-slate-700 text-xs space-y-1">
-                              <span className="text-red-400 font-semibold">История штрафов:</span>
-                              {empPenalties.map(pen => (
-                                <div key={pen.id} className="flex justify-between items-center bg-slate-900 px-2 py-1 rounded text-slate-300">
-                                  <span>-{pen.hours} ч. ({pen.reason}) — <span className="text-slate-500">{pen.date}</span></span>
-                                  <button onClick={() => deleteItem('penalties', pen.id)} className="text-red-400 hover:text-red-300 ml-2">✕</button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* АКТИВНЫЕ СОТРУДНИКИ И КНОПКА ПРИНУДИТЕЛЬНОГО ЗАКРЫТИЯ СМЕНЫ */}
-            <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
-              <h3 className="font-semibold mb-3 text-amber-400">👷 Активные сотрудники на объектах сейчас</h3>
-              {activeEmployees.length === 0 ? <p className="text-xs text-slate-500">Нет работающих в данный момент</p> : (
-                <div className="space-y-3">
+            {/* Активные сотрудники */}
+            <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-amber-500 mb-3 flex items-center justify-between">
+                <span>⚡ Работают на объектах сейчас</span>
+                <span className="bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded-full text-[10px]">{activeEmployees.length}</span>
+              </h3>
+              {activeEmployees.length === 0 ? <p className="text-xs text-slate-500">Нет активных смен</p> : (
+                <div className="space-y-2">
                   {activeEmployees.map(emp => {
                     const liveSec = getEmployeeLiveTimer(emp);
                     return (
-                      <div key={emp.id} className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex flex-col gap-3">
-                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                          <div>
-                            <div className="font-bold text-white text-base">
-                              {emp.name} — <span className="text-amber-400">{emp.status}</span>
-                            </div>
-                            <div className="text-xs text-slate-400 font-mono mt-0.5">
-                              Время работы: {formatTime(liveSec)}
-                            </div>
+                      <div key={emp.id} className="bg-slate-950 border border-slate-800 p-3 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-xs">
+                        <div>
+                          <span className="font-bold text-slate-100">{emp.name}</span> — <span className="text-amber-500 font-medium">{emp.status}</span>
+                          <div className="font-mono text-[11px] text-slate-400 mt-0.5">Время: {formatTime(liveSec)}</div>
+                          <div className="text-[11px] text-blue-400 mt-1">
+                            {emp.lat && emp.lng ? (
+                              <a href={`https://www.google.com/maps?q=${emp.lat},${emp.lng}`} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                                📍 {emp.address || 'Адрес объекта'}
+                              </a>
+                            ) : <span className="text-slate-500">📍 Поиск геопозиции...</span>}
                           </div>
-                          {/* Кнопка принудительного закрытия зависшей смены */}
-                          <button 
-                            onClick={() => forceCloseEmployeeShift(emp)}
-                            className="bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white px-3 py-1.5 rounded-lg text-xs font-medium transition"
-                          >
-                            Закрыть смену принудительно
-                          </button>
                         </div>
-
-                        <div className="flex items-center gap-2 pt-2 border-t border-slate-800 text-xs">
-                          <span className="text-base">📍</span>
-                          {emp.lat && emp.lng ? (
-                            <a 
-                              href={`https://www.google.com/maps?q=${emp.lat},${emp.lng}`} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="text-blue-400 hover:underline font-medium flex items-center gap-1"
-                            >
-                              {emp.address || 'Определяем адрес...'} (Открыть на карте)
-                            </a>
-                          ) : (
-                            <span className="text-slate-500">Ожидание геолокации от сотрудника...</span>
-                          )}
-                        </div>
+                        <button onClick={() => forceCloseEmployeeShift(emp)} className="bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-white px-2.5 py-1.5 rounded-lg transition text-[11px] font-medium border border-rose-500/20">Закрыть смену</button>
                       </div>
                     );
                   })}
@@ -614,22 +522,84 @@ export default function App() {
               )}
             </div>
 
-            <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
-              <h3 className="font-semibold mb-3 text-amber-400">📊 История отработанного времени и объектов</h3>
-              {shiftHistory.length === 0 ? <p className="text-xs text-slate-500">История смен пока пуста</p> : (
-                <div className="space-y-3">
-                  {shiftHistory.map(sh => (
-                    <div key={sh.id} className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-sm">
-                      <div>
-                        <div className="font-bold text-white text-base">{sh.name}</div>
-                        <div className="text-xs text-slate-400">{sh.date}</div>
-                        <div className="text-xs text-amber-400/90 mt-1 flex items-center gap-1 font-medium">
-                          📍 {sh.address || 'Адрес не указан'}
+            {/* База сотрудников и компактные штрафы */}
+            <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-amber-500 mb-3">👥 База сотрудников</h3>
+              {employeesList.length === 0 ? <p className="text-xs text-slate-500">Список пуст</p> : (
+                <div className="space-y-2">
+                  {employeesList.map(emp => {
+                    const empPenalties = penalties.filter(p => p.email === emp.email);
+                    const isOpen = penaltyOpenEmail === emp.email;
+                    return (
+                      <div key={emp.id} className="bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs space-y-2">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <span className="font-bold text-slate-200">{emp.name}</span>
+                            <div className="text-[11px] text-slate-400">{emp.email}</div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button onClick={() => setPenaltyOpenEmail(isOpen ? null : emp.email)} className="bg-amber-500/10 hover:bg-amber-500 text-amber-500 hover:text-slate-950 px-2.5 py-1.5 rounded-lg transition font-medium border border-amber-500/20">
+                              {isOpen ? 'Закрыть' : 'Штраф'}
+                            </button>
+                            <button onClick={() => deleteItem('employees', emp.id)} className="bg-slate-900 hover:bg-rose-600 text-slate-400 hover:text-white px-2 py-1.5 rounded-lg transition border border-slate-800">✕</button>
+                          </div>
                         </div>
+
+                        {/* Выпадающая компактная форма штрафа */}
+                        {isOpen && (
+                          <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 space-y-2 mt-2">
+                            <div className="flex gap-2">
+                              <input 
+                                type="number" 
+                                step="0.5" 
+                                placeholder="Часы (напр. 1)" 
+                                value={penaltyHoursInput[emp.email] || ''} 
+                                onChange={e => setPenaltyHoursInput({ ...penaltyHoursInput, [emp.email]: e.target.value })}
+                                className="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-white w-28 outline-none focus:border-amber-500"
+                              />
+                              <input 
+                                type="text" 
+                                placeholder="Причина вычета часов" 
+                                value={penaltyReasonInput[emp.email] || ''} 
+                                onChange={e => setPenaltyReasonInput({ ...penaltyReasonInput, [emp.email]: e.target.value })}
+                                className="flex-1 bg-slate-950 border border-slate-800 rounded px-2 py-1 text-white outline-none focus:border-amber-500"
+                              />
+                              <button onClick={() => applyPenalty(emp.email, emp.name)} className="bg-rose-600 hover:bg-rose-500 text-white px-3 py-1 rounded font-medium">ОК</button>
+                            </div>
+                          </div>
+                        )}
+
+                        {empPenalties.length > 0 && (
+                          <div className="pt-1 text-[11px] text-rose-400 space-y-0.5">
+                            {empPenalties.map(p => (
+                              <div key={p.id} className="flex justify-between items-center bg-slate-900/50 px-2 py-0.5 rounded">
+                                <span>Штраф: -{p.hours} ч. ({p.reason})</span>
+                                <button onClick={() => deleteItem('penalties', p.id)} className="text-slate-500 hover:text-white">✕</button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
-                        <span className="font-mono text-amber-400 font-bold text-base">{formatTime(sh.totalTime)}</span>
-                        <button onClick={() => deleteItem('shift_history', sh.id)} className="text-xs bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white px-2.5 py-1.5 rounded-lg transition">Удалить</button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* История смен (компактная лента) */}
+            <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-amber-500 mb-3">📊 История отработанного времени</h3>
+              {shiftHistory.length === 0 ? <p className="text-xs text-slate-500">История пуста</p> : (
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                  {shiftHistory.map(sh => (
+                    <div key={sh.id} className="bg-slate-950 border border-slate-800 p-3 rounded-xl flex justify-between items-center text-xs">
+                      <div>
+                        <span className="font-bold text-slate-200">{sh.name}</span>
+                        <div className="text-[11px] text-slate-400">{sh.date} • 📍 {sh.address}</div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono text-amber-500 font-bold">{formatTime(sh.totalTime)}</span>
+                        <button onClick={() => deleteItem('shift_history', sh.id)} className="text-slate-500 hover:text-rose-400">✕</button>
                       </div>
                     </div>
                   ))}
@@ -637,77 +607,69 @@ export default function App() {
               )}
             </div>
 
-            {emergencies.length > 0 && (
-              <div className="bg-red-950/40 border border-red-500/50 p-5 rounded-2xl">
-                <h3 className="font-semibold text-red-400 mb-3">🚨 Экстренные сообщения</h3>
-                <div className="space-y-2">
-                  {emergencies.map(e => (
-                    <div key={e.id} className="bg-slate-900 p-3 rounded-lg flex justify-between items-center text-sm">
-                      <div><span className="font-bold text-red-400">{e.user}:</span> {e.text}</div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs text-slate-500">{e.time}</span>
-                        <button onClick={() => deleteItem('emergencies', e.id)} className="text-xs bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white px-2 py-1 rounded transition">Удалить</button>
+            {/* Материалы и обращения в две колонки / компактно */}
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-amber-500 mb-3">📦 Заказы материалов</h3>
+                {materials.length === 0 ? <p className="text-xs text-slate-500">Нет заказов</p> : (
+                  <div className="space-y-2">
+                    {materials.map(m => (
+                      <div key={m.id} className="bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs space-y-1">
+                        <div className="flex justify-between font-medium">
+                          <span className="text-slate-200">{m.name} ({m.qty})</span>
+                          <button onClick={() => deleteItem('materials', m.id)} className="text-slate-500 hover:text-rose-400">✕</button>
+                        </div>
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-slate-400">От: {m.user}</span>
+                          <select value={m.status} onChange={e => updateMaterialStatus(m.id, e.target.value)} className="bg-slate-900 border border-slate-800 rounded px-2 py-0.5 text-amber-500">
+                            <option value="В обработке">В обработке</option>
+                            <option value="Заказано">Заказано</option>
+                            <option value="Доставлено">Доставлено</option>
+                          </select>
+                        </div>
                       </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-amber-500 mb-3">💬 Обращения сотрудников</h3>
+                {issues.length === 0 ? <p className="text-xs text-slate-500">Нет обращений</p> : (
+                  <div className="space-y-2">
+                    {issues.map(i => (
+                      <div key={i.id} className="bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs space-y-1">
+                        <div className="flex justify-between font-medium">
+                          <span className="text-slate-200">{i.user}: {i.text}</span>
+                          <button onClick={() => deleteItem('issues', i.id)} className="text-slate-500 hover:text-rose-400">✕</button>
+                        </div>
+                        <div className="flex justify-end">
+                          <select value={i.status} onChange={e => updateIssueStatus(i.id, e.target.value)} className="bg-slate-900 border border-slate-800 rounded px-2 py-0.5 text-amber-500 text-[11px]">
+                            <option value="Открыто">Открыто</option>
+                            <option value="В работе">В работе</option>
+                            <option value="Решено">Решено</option>
+                          </select>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {emergencies.length > 0 && (
+              <div className="bg-rose-950/20 border border-rose-500/30 p-4 rounded-2xl">
+                <h3 className="text-xs font-semibold text-rose-400 uppercase tracking-wider mb-2">🚨 Экстренные ЧП</h3>
+                <div className="space-y-1.5">
+                  {emergencies.map(e => (
+                    <div key={e.id} className="bg-slate-950 p-2.5 rounded-xl text-xs flex justify-between items-center border border-rose-500/20">
+                      <div><span className="font-bold text-rose-400">{e.user}:</span> <span className="text-slate-200">{e.text}</span></div>
+                      <button onClick={() => deleteItem('emergencies', e.id)} className="text-slate-500 hover:text-white">✕</button>
                     </div>
                   ))}
                 </div>
               </div>
             )}
-
-            <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
-              <h3 className="font-semibold mb-3 text-amber-400">📦 Заказы материалов (Управление)</h3>
-              {materials.length === 0 ? <p className="text-xs text-slate-500">Заказов пока нет</p> : (
-                <div className="space-y-3">
-                  {materials.map(m => (
-                    <div key={m.id} className="bg-slate-900 p-3 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-sm">
-                      <div>
-                        <span className="font-bold text-amber-400">{m.user}:</span> {m.name} ({m.qty})
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <select 
-                          value={m.status} 
-                          onChange={(e) => updateMaterialStatus(m.id, e.target.value)}
-                          className="bg-slate-800 border border-slate-700 text-xs rounded px-2 py-1 text-white"
-                        >
-                          <option value="В обработке">В обработке</option>
-                          <option value="Заказано">Заказано</option>
-                          <option value="Доставлено">Доставлено</option>
-                          <option value="Отменено">Отменено</option>
-                        </select>
-                        <button onClick={() => deleteItem('materials', m.id)} className="text-xs bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white px-2.5 py-1 rounded transition">Удалить</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
-              <h3 className="font-semibold mb-3 text-amber-400">💬 Обращения работников (Управление)</h3>
-              {issues.length === 0 ? <p className="text-xs text-slate-500">Обращений пока нет</p> : (
-                <div className="space-y-3">
-                  {issues.map(i => (
-                    <div key={i.id} className="bg-slate-900 p-3 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-sm">
-                      <div>
-                        <span className="font-bold text-amber-400">{i.user}:</span> {i.text}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <select 
-                          value={i.status} 
-                          onChange={(e) => updateIssueStatus(i.id, e.target.value)}
-                          className="bg-slate-800 border border-slate-700 text-xs rounded px-2.5 py-1 text-white"
-                        >
-                          <option value="Открыто">Открыто</option>
-                          <option value="В работе">В работе</option>
-                          <option value="Решено">Решено</option>
-                        </select>
-                        <button onClick={() => deleteItem('issues', i.id)} className="text-xs bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white px-2.5 py-1 rounded transition">Удалить</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
         )}
       </main>
