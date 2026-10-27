@@ -185,7 +185,7 @@ export default function App() {
 
   const handleAuth = async (e) => {
     e.preventDefault();
-    if (!email || !password) return alert('Заполните все поля!');
+    if (!email || !password) return alert('Заполните данные!');
     
     const isOwner = email.toLowerCase().trim() === companyEmail.toLowerCase();
     const role = isOwner ? 'owner' : 'employee';
@@ -388,40 +388,46 @@ export default function App() {
     return emp.timer || 0;
   };
 
+  // ЭКРАН ВХОДА И РЕГИСТРАЦИИ
   if (!user) {
     return (
-      <div className="flex items-center justify-center min-h-screen p-4 bg-slate-950 font-sans">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black pointer-events-none"></div>
-        <div className="relative bg-slate-900/80 backdrop-blur-xl border border-slate-800/80 p-8 rounded-3xl max-w-sm w-full shadow-2xl shadow-amber-500/5 text-slate-100">
-          <div className="text-center mb-6">
-            <div className="inline-flex w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 items-center justify-center text-amber-500 font-bold text-lg mb-3 shadow-inner">LR</div>
-            <h1 className="text-xl font-black tracking-widest text-amber-400 uppercase">Luxe Renovation</h1>
-            <p className="text-slate-400 text-xs mt-1 tracking-wide">Elite Construction Management</p>
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 font-sans text-slate-100 relative overflow-hidden">
+        {/* Премиальный подложечный градиент */}
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-500/10 via-slate-950 to-slate-950 pointer-events-none"></div>
+
+        <div className="relative w-full max-w-sm bg-slate-900/90 backdrop-blur-2xl border border-amber-500/20 p-8 rounded-3xl shadow-2xl shadow-black/80">
+          <div className="text-center mb-8">
+            <div className="inline-flex w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-600 to-amber-400 items-center justify-center text-slate-950 font-black text-lg mb-3 shadow-lg shadow-amber-500/20">
+              LR
+            </div>
+            <h1 className="text-lg font-black tracking-widest text-slate-100 uppercase">LUXE RENOVATION</h1>
+            <div className="h-0.5 w-12 bg-amber-500/50 mx-auto my-2 rounded-full"></div>
+            <p className="text-[11px] text-slate-400 font-medium tracking-wide">Copenhagen • Renovation Management</p>
           </div>
 
-          <div className="flex bg-slate-950/80 p-1 rounded-xl mb-6 border border-slate-800 text-xs font-semibold">
-            <button type="button" className={`flex-1 py-2.5 rounded-lg transition-all ${!isRegister ? 'bg-amber-500 text-slate-950 font-bold shadow-lg shadow-amber-500/20' : 'text-slate-400 hover:text-white'}`} onClick={() => setIsRegister(false)}>Вход</button>
-            <button type="button" className={`flex-1 py-2.5 rounded-lg transition-all ${isRegister ? 'bg-amber-500 text-slate-950 font-bold shadow-lg shadow-amber-500/20' : 'text-slate-400 hover:text-white'}`} onClick={() => setIsRegister(true)}>Регистрация</button>
+          <div className="flex bg-slate-950/80 p-1 rounded-2xl mb-6 border border-slate-800 text-xs font-semibold">
+            <button type="button" className={`flex-1 py-2.5 rounded-xl transition-all duration-200 ${!isRegister ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20' : 'text-slate-400 hover:text-white'}`} onClick={() => setIsRegister(false)}>Вход</button>
+            <button type="button" className={`flex-1 py-2.5 rounded-xl transition-all duration-200 ${isRegister ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20' : 'text-slate-400 hover:text-white'}`} onClick={() => setIsRegister(true)}>Регистрация</button>
           </div>
 
           <form onSubmit={handleAuth} className="space-y-4 text-xs">
             {isRegister && (
               <div>
-                <label className="block text-slate-400 mb-1.5 font-medium">Ваше Имя</label>
-                <input type="text" value={name} onChange={e => setName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-3 text-white focus:border-amber-500 outline-none transition" placeholder="Александр" required />
+                <label className="block text-slate-400 mb-1.5 font-medium">Имя и Фамилия</label>
+                <input type="text" value={name} onChange={e => setName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white focus:border-amber-500/80 outline-none transition" placeholder="Станислав" required />
               </div>
             )}
             <div>
-              <label className="block text-slate-400 mb-1.5 font-medium">Корпоративный Email</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-3 text-white focus:border-amber-500 outline-none transition" placeholder="name@example.com" required />
+              <label className="block text-slate-400 mb-1.5 font-medium">Электронная почта</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white focus:border-amber-500/80 outline-none transition" placeholder="name@domain.com" required />
             </div>
             <div>
               <label className="block text-slate-400 mb-1.5 font-medium">Пароль</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-3 text-white focus:border-amber-500 outline-none transition" placeholder="••••••••" required />
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white focus:border-amber-500/80 outline-none transition" placeholder="••••••••" required />
             </div>
 
-            <button type="submit" className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold py-3.5 rounded-xl transition-all shadow-xl shadow-amber-500/20 uppercase tracking-wider text-[11px] mt-2">
-              {isRegister ? 'Зарегистрироваться' : 'Авторизоваться'}
+            <button type="submit" className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black py-3.5 rounded-xl transition-all shadow-xl shadow-amber-500/20 uppercase tracking-wider text-[11px] mt-2">
+              {isRegister ? 'Создать аккаунт' : 'Войти в панель'}
             </button>
           </form>
         </div>
@@ -432,112 +438,113 @@ export default function App() {
   const isOwner = user.email.toLowerCase() === companyEmail.toLowerCase();
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-amber-500 selection:text-slate-950 pb-12">
-      {/* Элитная навигация */}
-      <header className="bg-slate-900/80 backdrop-blur-xl border-b border-slate-800/80 px-4 py-3.5 sticky top-0 z-50 flex justify-between items-center shadow-lg shadow-black/20">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased pb-12">
+      {/* Шапка элитного уровня */}
+      <header className="bg-slate-900/90 backdrop-blur-xl border-b border-amber-500/20 px-5 py-3.5 sticky top-0 z-50 flex justify-between items-center shadow-2xl">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-slate-950 font-black text-sm shadow-md shadow-amber-500/20">LR</div>
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-600 to-amber-400 flex items-center justify-center text-slate-950 font-black text-xs shadow-lg shadow-amber-500/20">LR</div>
           <div>
-            <h1 className="font-bold text-xs text-slate-100 tracking-wider uppercase">Luxe Renovation</h1>
-            <p className="text-[11px] text-amber-500/90 font-medium">{user.name} • <span className="text-slate-400">{isOwner ? 'Руководитель' : 'Специалист'}</span></p>
+            <h1 className="font-black text-xs text-slate-100 tracking-widest uppercase">LUXE RENOVATION</h1>
+            <p className="text-[10px] text-amber-400/90 font-medium">{user.name} • <span className="text-slate-400">{isOwner ? 'Руководитель' : 'Специалист'}</span></p>
           </div>
         </div>
-        <button onClick={() => setUser(null)} className="text-xs bg-slate-800/80 hover:bg-slate-700 text-slate-300 px-3.5 py-1.5 rounded-xl border border-slate-700/60 transition-all font-medium">Выход</button>
+        <button onClick={() => setUser(null)} className="text-[11px] bg-slate-800/80 hover:bg-slate-700 text-slate-300 px-3.5 py-1.5 rounded-xl border border-slate-700/60 transition font-medium">Выйти</button>
       </header>
 
-      <main className="max-w-4xl mx-auto p-4 space-y-4">
+      <main className="max-w-3xl mx-auto p-4 space-y-4">
         {!isOwner ? (
           <>
-            {/* Премиальный таймер сотрудника */}
-            <div className="bg-gradient-to-b from-slate-900 to-slate-900/90 border border-slate-800/80 p-6 rounded-3xl text-center shadow-2xl relative overflow-hidden">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-1 bg-gradient-to-r from-transparent via-amber-500 to-transparent"></div>
-              <div className="text-[11px] text-slate-400 uppercase tracking-widest mb-2 font-semibold">Активная рабочая смена</div>
-              <div className="text-5xl font-mono font-black mb-6 text-amber-400 tracking-tight drop-shadow-[0_0_15px_rgba(245,158,11,0.2)]">{formatTime(timer)}</div>
-              <div className="grid grid-cols-3 gap-2.5 max-w-sm mx-auto">
-                <button onClick={() => changeShift('working')} className={`py-3 rounded-2xl text-xs font-bold transition-all ${shiftStatus === 'working' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30 ring-2 ring-emerald-400/50' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}>Старт</button>
-                <button onClick={() => changeShift('break')} className={`py-3 rounded-2xl text-xs font-bold transition-all ${shiftStatus === 'break' ? 'bg-amber-600 text-white shadow-lg shadow-amber-600/30 ring-2 ring-amber-400/50' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}>Обед</button>
-                <button onClick={() => changeShift('off')} className="py-3 bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-white rounded-2xl text-xs font-bold transition-all border border-rose-500/30">Финиш</button>
+            {/* ТАЙМЕР СОТРУДНИКА */}
+            <div className="bg-slate-900/90 border border-amber-500/20 p-6 rounded-3xl text-center shadow-2xl relative overflow-hidden">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-0.5 bg-amber-500"></div>
+              <div className="text-[10px] text-slate-400 uppercase tracking-widest mb-2 font-bold">Отработанное время</div>
+              <div className="text-5xl font-mono font-black mb-6 text-amber-400 tracking-tight drop-shadow-[0_0_20px_rgba(245,158,11,0.25)]">{formatTime(timer)}</div>
+              <div className="grid grid-cols-3 gap-2 max-w-xs mx-auto">
+                <button onClick={() => changeShift('working')} className={`py-3 rounded-xl text-xs font-bold transition-all ${shiftStatus === 'working' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}>Старт</button>
+                <button onClick={() => changeShift('break')} className={`py-3 rounded-xl text-xs font-bold transition-all ${shiftStatus === 'break' ? 'bg-amber-600 text-white shadow-lg shadow-amber-600/30' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}>Обед</button>
+                <button onClick={() => changeShift('off')} className="py-3 bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-white rounded-xl text-xs font-bold transition border border-rose-500/20">Финиш</button>
               </div>
             </div>
 
             {shiftStatus !== 'off' && (
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="bg-slate-900 border border-slate-800/80 p-5 rounded-3xl shadow-xl">
-                  <h3 className="text-xs font-bold mb-3 text-amber-400 uppercase tracking-wider flex items-center gap-2">📦 Заказ материалов</h3>
-                  <form onSubmit={addMaterial} className="space-y-3 text-xs">
-                    <input type="text" placeholder="Материал (напр. Грунтовка Knauf)" value={matName} onChange={e => setMatName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white outline-none focus:border-amber-500 transition" />
-                    <input type="text" placeholder="Количество (напр. 3 канистры)" value={matQty} onChange={e => setMatQty(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white outline-none focus:border-amber-500 transition" />
-                    <button type="submit" className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 py-2.5 rounded-xl font-bold transition shadow-lg shadow-amber-500/10">Заказать материалы</button>
+              <div className="grid md:grid-cols-2 gap-3">
+                <div className="bg-slate-900/90 border border-slate-800/80 p-4 rounded-3xl shadow-xl">
+                  <h3 className="text-xs font-bold mb-3 text-amber-400 uppercase tracking-wider">📦 Заказ материалов</h3>
+                  <form onSubmit={addMaterial} className="space-y-2.5 text-xs">
+                    <input type="text" placeholder="Наименование..." value={matName} onChange={e => setMatName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white outline-none focus:border-amber-500" />
+                    <input type="text" placeholder="Количество..." value={matQty} onChange={e => setMatQty(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white outline-none focus:border-amber-500" />
+                    <button type="submit" className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 py-2 rounded-xl font-bold transition">Заказать</button>
                   </form>
                 </div>
 
-                <div className="bg-slate-900 border border-slate-800/80 p-5 rounded-3xl shadow-xl">
-                  <h3 className="text-xs font-bold mb-3 text-amber-400 uppercase tracking-wider flex items-center gap-2">💬 Связь с руководством</h3>
-                  <form onSubmit={addIssue} className="space-y-3 text-xs">
-                    <textarea placeholder="Опишите вопрос по объекту..." value={issueText} onChange={e => setIssueText(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white h-[98px] outline-none focus:border-amber-500 transition resize-none"></textarea>
-                    <button type="submit" className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 py-2.5 rounded-xl font-bold transition shadow-lg shadow-amber-500/10">Отправить сообщение</button>
+                <div className="bg-slate-900/90 border border-slate-800/80 p-4 rounded-3xl shadow-xl">
+                  <h3 className="text-xs font-bold mb-3 text-amber-400 uppercase tracking-wider">💬 Обращение к владельцу</h3>
+                  <form onSubmit={addIssue} className="space-y-2.5 text-xs">
+                    <textarea placeholder="Опишите вопрос по объекту..." value={issueText} onChange={e => setIssueText(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white h-[80px] outline-none focus:border-amber-500 resize-none"></textarea>
+                    <button type="submit" className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 py-2 rounded-xl font-bold transition">Отправить</button>
                   </form>
                 </div>
 
-                <div className="bg-slate-900 border border-rose-500/30 p-5 rounded-3xl shadow-xl md:col-span-2">
-                  <h3 className="text-xs font-bold mb-2.5 text-rose-400 uppercase tracking-wider flex items-center gap-2">🚨 Экстренный Форс-мажор / ЧП</h3>
-                  <form onSubmit={addEmergency} className="flex gap-2.5 text-xs">
-                    <input type="text" placeholder="Срочное сообщение руководству о нештатной ситуации..." value={emText} onChange={e => setEmText(e.target.value)} className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white outline-none focus:border-rose-500 transition" />
-                    <button type="submit" className="bg-rose-600 hover:bg-rose-700 text-white px-5 py-3 rounded-xl font-bold transition shadow-lg shadow-rose-600/20">Передать</button>
+                <div className="bg-slate-900/90 border border-rose-500/30 p-4 rounded-3xl shadow-xl md:col-span-2">
+                  <h3 className="text-xs font-bold mb-2 text-rose-400 uppercase tracking-wider">🚨 ЧП / Экстренная ситуация</h3>
+                  <form onSubmit={addEmergency} className="flex gap-2 text-xs">
+                    <input type="text" placeholder="Срочное сообщение..." value={emText} onChange={e => setEmText(e.target.value)} className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white outline-none focus:border-rose-500" />
+                    <button type="submit" className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-xl font-bold transition">Передать</button>
                   </form>
                 </div>
               </div>
             )}
           </>
         ) : (
+          /* ПАНЕЛЬ ВЛАДЕЛЬЦА (LUXE ADMIN) */
           <div className="space-y-4">
-            {/* Сводка компании */}
-            <div className="bg-slate-900 border border-slate-800/80 p-5 rounded-3xl shadow-xl">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3.5">Главная панель управления Luxe Renovation</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
-                <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800/80">
-                  <div className="text-2xl font-black text-amber-500">{employeesList.length}</div>
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Персонал</div>
+            {/* Сводка */}
+            <div className="bg-slate-900/90 border border-amber-500/20 p-5 rounded-3xl shadow-xl">
+              <h2 className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-3">Мониторинг компании Luxe Renovation</h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-center">
+                <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800">
+                  <div className="text-xl font-black text-amber-400">{employeesList.length}</div>
+                  <div className="text-[10px] text-slate-400 uppercase font-medium mt-0.5">Сотрудники</div>
                 </div>
-                <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800/80">
-                  <div className="text-2xl font-black text-slate-100">{materials.length}</div>
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Заказы</div>
+                <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800">
+                  <div className="text-xl font-black text-slate-100">{materials.length}</div>
+                  <div className="text-[10px] text-slate-400 uppercase font-medium mt-0.5">Материалы</div>
                 </div>
-                <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800/80">
-                  <div className="text-2xl font-black text-slate-100">{issues.length}</div>
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Вопросы</div>
+                <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800">
+                  <div className="text-xl font-black text-slate-100">{issues.length}</div>
+                  <div className="text-[10px] text-slate-400 uppercase font-medium mt-0.5">Обращения</div>
                 </div>
-                <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800/80">
-                  <div className="text-2xl font-black text-rose-500">{emergencies.length}</div>
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">ЧП</div>
+                <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800">
+                  <div className="text-xl font-black text-rose-500">{emergencies.length}</div>
+                  <div className="text-[10px] text-slate-400 uppercase font-medium mt-0.5">ЧП</div>
                 </div>
               </div>
             </div>
 
-            {/* Активные сотрудники на объектах */}
-            <div className="bg-slate-900 border border-slate-800/80 p-5 rounded-3xl shadow-xl">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-amber-400 mb-3.5 flex items-center justify-between">
-                <span>⚡ Работающие объекты в реальном времени</span>
-                <span className="bg-amber-500/10 text-amber-400 px-2.5 py-0.5 rounded-full text-[10px] border border-amber-500/20">{activeEmployees.length} онлайн</span>
+            {/* Активные смены */}
+            <div className="bg-slate-900/90 border border-slate-800/80 p-4.5 rounded-3xl shadow-xl">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-amber-400 mb-3 flex items-center justify-between">
+                <span>⚡ Работают на объектах сейчас</span>
+                <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-md text-[10px] font-mono">{activeEmployees.length} онлайн</span>
               </h3>
-              {activeEmployees.length === 0 ? <p className="text-xs text-slate-500">В данный момент активных смен нет</p> : (
-                <div className="space-y-2.5">
+              {activeEmployees.length === 0 ? <p className="text-xs text-slate-500">Нет активных смен на объектах</p> : (
+                <div className="space-y-2">
                   {activeEmployees.map(emp => {
                     const liveSec = getEmployeeLiveTimer(emp);
                     return (
-                      <div key={emp.id} className="bg-slate-950 border border-slate-800/80 p-3.5 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-xs">
+                      <div key={emp.id} className="bg-slate-950 border border-slate-800 p-3 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-xs">
                         <div>
-                          <span className="font-bold text-slate-100 text-sm">{emp.name}</span> — <span className="text-amber-400 font-semibold">{emp.status}</span>
-                          <div className="font-mono text-xs text-slate-400 mt-1">Отработано: {formatTime(liveSec)}</div>
-                          <div className="text-xs text-blue-400 mt-1 font-medium">
+                          <span className="font-bold text-slate-100">{emp.name}</span> — <span className="text-amber-400 font-medium">{emp.status}</span>
+                          <div className="font-mono text-[11px] text-slate-400 mt-0.5">Время: {formatTime(liveSec)}</div>
+                          <div className="text-[11px] text-blue-400 mt-0.5">
                             {emp.lat && emp.lng ? (
-                              <a href={`https://www.google.com/maps?q=${emp.lat},${emp.lng}`} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
-                                📍 {emp.address || 'Точный адрес объекта'}
+                              <a href={`https://www.google.com/maps?q=${emp.lat},${emp.lng}`} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                                📍 {emp.address || 'Адрес объекта'}
                               </a>
-                            ) : <span className="text-slate-500">📍 Ожидание спутников геопозиции...</span>}
+                            ) : <span className="text-slate-500">📍 Ожидание геолокации...</span>}
                           </div>
                         </div>
-                        <button onClick={() => forceCloseEmployeeShift(emp)} className="bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-white px-3 py-2 rounded-xl transition-all text-xs font-semibold border border-rose-500/20">Завершить смену</button>
+                        <button onClick={() => forceCloseEmployeeShift(emp)} className="bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-white px-3 py-1.5 rounded-xl transition text-[11px] font-semibold border border-rose-500/20">Закрыть смену</button>
                       </div>
                     );
                   })}
@@ -545,74 +552,49 @@ export default function App() {
               )}
             </div>
 
-            {/* Этапы ремонтных работ (новый функционал премиум-уровня) */}
-            <div className="bg-slate-900 border border-slate-800/80 p-5 rounded-3xl shadow-xl">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-amber-400 mb-3.5">🏗️ Этапы ремонтных работ на объектах</h3>
-              <form onSubmit={addStage} className="flex gap-2.5 mb-3.5 text-xs">
-                <input type="text" placeholder="Добавить этап (напр. Монтаж перегородок)..." value={stageName} onChange={e => setStageName(e.target.value)} className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white outline-none focus:border-amber-500 transition" />
-                <button type="submit" className="bg-amber-500 hover:bg-amber-400 text-slate-950 px-4 py-2.5 rounded-xl font-bold transition">Добавить</button>
-              </form>
-              {projectStages.length === 0 ? <p className="text-xs text-slate-500">Этапы пока не добавлены</p> : (
+            {/* База сотрудников и компактные штрафы */}
+            <div className="bg-slate-900/90 border border-slate-800/80 p-4.5 rounded-3xl shadow-xl">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-amber-400 mb-3">👥 База сотрудников</h3>
+              {employeesList.length === 0 ? <p className="text-xs text-slate-500">В базе пока нет пользователей</p> : (
                 <div className="space-y-2">
-                  {projectStages.map(st => (
-                    <div key={st.id} className="bg-slate-950 border border-slate-800/80 p-3 rounded-2xl flex justify-between items-center text-xs">
-                      <span className="font-semibold text-slate-200">{st.name}</span>
-                      <div className="flex items-center gap-2">
-                        <select value={st.status} onChange={e => updateStageStatus(st.id, e.target.value)} className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-amber-400 font-medium text-xs">
-                          <option value="В работе">В работе</option>
-                          <option value="Выполнено">Выполнено</option>
-                          <option value="Приостановлено">Приостановлено</option>
-                        </select>
-                        <button onClick={() => deleteItem('project_stages', st.id)} className="text-slate-500 hover:text-rose-400 px-1.5">✕</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* База сотрудников и штрафные санкции */}
-            <div className="bg-slate-900 border border-slate-800/80 p-5 rounded-3xl shadow-xl">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-amber-400 mb-3.5">👥 База специалистов и штрафные санкции</h3>
-              {employeesList.length === 0 ? <p className="text-xs text-slate-500">Сотрудники еще не зарегистрировались</p> : (
-                <div className="space-y-2.5">
                   {employeesList.map(emp => {
                     const empPenalties = penalties.filter(p => p.email === emp.email);
                     const isOpen = penaltyOpenEmail === emp.email;
                     return (
-                      <div key={emp.id} className="bg-slate-950 border border-slate-800/80 p-3.5 rounded-2xl text-xs space-y-2.5">
+                      <div key={emp.id} className="bg-slate-950 border border-slate-800 p-3 rounded-2xl text-xs space-y-2">
                         <div className="flex justify-between items-center">
                           <div>
-                            <span className="font-bold text-slate-100 text-sm">{emp.name}</span>
+                            <span className="font-bold text-slate-200">{emp.name}</span>
                             <div className="text-[11px] text-slate-400">{emp.email}</div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <button onClick={() => setPenaltyOpenEmail(isOpen ? null : emp.email)} className="bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-slate-950 px-3 py-1.5 rounded-xl transition-all font-semibold border border-amber-500/20">
-                              {isOpen ? 'Закрыть' : 'Штраф (-часы)'}
+                          <div className="flex items-center gap-1.5">
+                            <button onClick={() => setPenaltyOpenEmail(isOpen ? null : emp.email)} className="bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-slate-950 px-2.5 py-1.5 rounded-xl transition font-semibold border border-amber-500/20 text-[11px]">
+                              {isOpen ? 'Скрыть' : 'Штраф'}
                             </button>
-                            <button onClick={() => deleteItem('employees', emp.id)} className="bg-slate-900 hover:bg-rose-600 text-slate-400 hover:text-white px-2.5 py-1.5 rounded-xl transition border border-slate-800">✕</button>
+                            <button onClick={() => deleteItem('employees', emp.id)} className="bg-slate-900 hover:bg-rose-600 text-slate-400 hover:text-white px-2 py-1.5 rounded-xl transition border border-slate-800 text-[11px]">✕</button>
                           </div>
                         </div>
 
+                        {/* Форма вычета часов */}
                         {isOpen && (
-                          <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-2.5 mt-2">
+                          <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800 space-y-2 mt-2">
                             <div className="flex gap-2">
                               <input 
                                 type="number" 
                                 step="0.5" 
-                                placeholder="Часы (напр. 1)" 
+                                placeholder="Часы (-1)" 
                                 value={penaltyHoursInput[emp.email] || ''} 
                                 onChange={e => setPenaltyHoursInput({ ...penaltyHoursInput, [emp.email]: e.target.value })}
-                                className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white w-28 outline-none focus:border-amber-500"
+                                className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-white w-24 outline-none focus:border-amber-500"
                               />
                               <input 
                                 type="text" 
-                                placeholder="Причина вычета часов..." 
+                                placeholder="Причина..." 
                                 value={penaltyReasonInput[emp.email] || ''} 
                                 onChange={e => setPenaltyReasonInput({ ...penaltyReasonInput, [emp.email]: e.target.value })}
-                                className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white outline-none focus:border-amber-500"
+                                className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-white outline-none focus:border-amber-500"
                               />
-                              <button onClick={() => applyPenalty(emp.email, emp.name)} className="bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-xl font-bold">ОК</button>
+                              <button onClick={() => applyPenalty(emp.email, emp.name)} className="bg-rose-600 hover:bg-rose-500 text-white px-3 py-1 rounded-lg font-bold">ОК</button>
                             </div>
                           </div>
                         )}
@@ -620,7 +602,7 @@ export default function App() {
                         {empPenalties.length > 0 && (
                           <div className="pt-1 text-[11px] text-rose-400 space-y-1">
                             {empPenalties.map(p => (
-                              <div key={p.id} className="flex justify-between items-center bg-slate-900/60 px-3 py-1 rounded-xl">
+                              <div key={p.id} className="flex justify-between items-center bg-slate-900/60 px-2.5 py-1 rounded-lg">
                                 <span>Штраф: -{p.hours} ч. ({p.reason})</span>
                                 <button onClick={() => deleteItem('penalties', p.id)} className="text-slate-500 hover:text-white">✕</button>
                               </div>
@@ -635,19 +617,19 @@ export default function App() {
             </div>
 
             {/* История отработанного времени */}
-            <div className="bg-slate-900 border border-slate-800/80 p-5 rounded-3xl shadow-xl">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-amber-400 mb-3.5">📊 История отработанного времени</h3>
-              {shiftHistory.length === 0 ? <p className="text-xs text-slate-500">Архив смен пуст</p> : (
-                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+            <div className="bg-slate-900/90 border border-slate-800/80 p-4.5 rounded-3xl shadow-xl">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-amber-400 mb-3">📊 История отработанного времени</h3>
+              {shiftHistory.length === 0 ? <p className="text-xs text-slate-500">История смен пуста</p> : (
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                   {shiftHistory.map(sh => (
-                    <div key={sh.id} className="bg-slate-950 border border-slate-800/80 p-3.5 rounded-2xl flex justify-between items-center text-xs">
+                    <div key={sh.id} className="bg-slate-950 border border-slate-800 p-3 rounded-2xl flex justify-between items-center text-xs">
                       <div>
-                        <span className="font-bold text-slate-200 text-sm">{sh.name}</span>
-                        <div className="text-[11px] text-slate-400 mt-0.5">{sh.date} • 📍 {sh.address}</div>
+                        <span className="font-bold text-slate-200">{sh.name}</span>
+                        <div className="text-[11px] text-slate-400">{sh.date} • 📍 {sh.address}</div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="font-mono text-amber-400 font-bold text-sm">{formatTime(sh.totalTime)}</span>
-                        <button onClick={() => deleteItem('shift_history', sh.id)} className="text-slate-500 hover:text-rose-400 p-1">✕</button>
+                        <span className="font-mono text-amber-400 font-bold">{formatTime(sh.totalTime)}</span>
+                        <button onClick={() => deleteItem('shift_history', sh.id)} className="text-slate-500 hover:text-rose-400">✕</button>
                       </div>
                     </div>
                   ))}
@@ -655,25 +637,24 @@ export default function App() {
               )}
             </div>
 
-            {/* Материалы и обращения */}
-            <div className="grid md:grid-cols-2 gap-4">
-              <div className="bg-slate-900 border border-slate-800/80 p-5 rounded-3xl shadow-xl">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-amber-400 mb-3.5">📦 Заказы материалов</h3>
-                {materials.length === 0 ? <p className="text-xs text-slate-500">Заказов нет</p> : (
-                  <div className="space-y-2.5">
+            {/* Заказы материалов и Обращения */}
+            <div className="grid md:grid-cols-2 gap-3">
+              <div className="bg-slate-900/90 border border-slate-800/80 p-4 rounded-3xl shadow-xl">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-amber-400 mb-3">📦 Заказы материалов</h3>
+                {materials.length === 0 ? <p className="text-xs text-slate-500">Заказов пока нет</p> : (
+                  <div className="space-y-2">
                     {materials.map(m => (
-                      <div key={m.id} className="bg-slate-950 border border-slate-800/80 p-3 rounded-2xl text-xs space-y-2">
-                        <div className="flex justify-between font-semibold">
-                          <span className="text-slate-100">{m.name} ({m.qty})</span>
+                      <div key={m.id} className="bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs space-y-1">
+                        <div className="flex justify-between font-medium">
+                          <span className="text-slate-200">{m.name} ({m.qty})</span>
                           <button onClick={() => deleteItem('materials', m.id)} className="text-slate-500 hover:text-rose-400">✕</button>
                         </div>
                         <div className="flex justify-between items-center text-[11px]">
-                          <span className="text-slate-400">Заказчик: {m.user}</span>
-                          <select value={m.status} onChange={e => updateMaterialStatus(m.id, e.target.value)} className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-amber-400 font-medium">
+                          <span className="text-slate-400">От: {m.user}</span>
+                          <select value={m.status} onChange={e => updateMaterialStatus(m.id, e.target.value)} className="bg-slate-900 border border-slate-800 rounded px-2 py-0.5 text-amber-400">
                             <option value="В обработке">В обработке</option>
                             <option value="Заказано">Заказано</option>
                             <option value="Доставлено">Доставлено</option>
-                            <option value="Отменено">Отменено</option>
                           </select>
                         </div>
                       </div>
@@ -682,18 +663,18 @@ export default function App() {
                 )}
               </div>
 
-              <div className="bg-slate-900 border border-slate-800/80 p-5 rounded-3xl shadow-xl">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-amber-400 mb-3.5">💬 Обращения сотрудников</h3>
-                {issues.length === 0 ? <p className="text-xs text-slate-500">Обращений нет</p> : (
-                  <div className="space-y-2.5">
+              <div className="bg-slate-900/90 border border-slate-800/80 p-4 rounded-3xl shadow-xl">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-amber-400 mb-3">💬 Обращения работников</h3>
+                {issues.length === 0 ? <p className="text-xs text-slate-500">Обращений пока нет</p> : (
+                  <div className="space-y-2">
                     {issues.map(i => (
-                      <div key={i.id} className="bg-slate-950 border border-slate-800/80 p-3 rounded-2xl text-xs space-y-2">
-                        <div className="flex justify-between font-semibold">
-                          <span className="text-slate-100">{i.user}: {i.text}</span>
+                      <div key={i.id} className="bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs space-y-1">
+                        <div className="flex justify-between font-medium">
+                          <span className="text-slate-200">{i.user}: {i.text}</span>
                           <button onClick={() => deleteItem('issues', i.id)} className="text-slate-500 hover:text-rose-400">✕</button>
                         </div>
                         <div className="flex justify-end">
-                          <select value={i.status} onChange={e => updateIssueStatus(i.id, e.target.value)} className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-amber-400 font-medium text-[11px]">
+                          <select value={i.status} onChange={e => updateIssueStatus(i.id, e.target.value)} className="bg-slate-900 border border-slate-800 rounded px-2 py-0.5 text-amber-400 text-[11px]">
                             <option value="Открыто">Открыто</option>
                             <option value="В работе">В работе</option>
                             <option value="Решено">Решено</option>
@@ -707,13 +688,13 @@ export default function App() {
             </div>
 
             {emergencies.length > 0 && (
-              <div className="bg-rose-950/20 border border-rose-500/40 p-5 rounded-3xl shadow-xl">
-                <h3 className="text-xs font-bold text-rose-400 uppercase tracking-wider mb-3">🚨 Экстренные ЧП и происшествия</h3>
-                <div className="space-y-2">
+              <div className="bg-rose-950/20 border border-rose-500/30 p-4 rounded-3xl">
+                <h3 className="text-xs font-bold text-rose-400 uppercase tracking-wider mb-2">🚨 Экстренные ЧП</h3>
+                <div className="space-y-1.5">
                   {emergencies.map(e => (
-                    <div key={e.id} className="bg-slate-950 p-3 rounded-2xl text-xs flex justify-between items-center border border-rose-500/30">
+                    <div key={e.id} className="bg-slate-950 p-2.5 rounded-xl text-xs flex justify-between items-center border border-rose-500/20">
                       <div><span className="font-bold text-rose-400">{e.user}:</span> <span className="text-slate-200">{e.text}</span></div>
-                      <button onClick={() => deleteItem('emergencies', e.id)} className="text-slate-500 hover:text-white px-2">✕</button>
+                      <button onClick={() => deleteItem('emergencies', e.id)} className="text-slate-500 hover:text-white">✕</button>
                     </div>
                   ))}
                 </div>
