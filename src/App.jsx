@@ -40,6 +40,11 @@ export default function App() {
   const [activeEmployees, setActiveEmployees] = useState([]);
   const [shiftHistory, setShiftHistory] = useState([]);
   const [employeesList, setEmployeesList] = useState([]);
+  const [penalties, setPenalties] = useState([]);
+
+  // Состояния для модального окна/формы штрафов
+  const [penaltyHoursInput, setPenaltyHoursInput] = useState({});
+  const [penaltyReasonInput, setPenaltyReasonInput] = useState({});
 
   const [matName, setMatName] = useState('');
   const [matQty, setMatQty] = useState('');
@@ -72,6 +77,9 @@ export default function App() {
     const unsubEmployees = db.collection('employees').onSnapshot((snapshot) => {
       setEmployeesList(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
+    const unsubPenalties = db.collection('penalties').onSnapshot((snapshot) => {
+      setPenalties(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
 
     return () => {
       unsubMaterials();
@@ -80,6 +88,7 @@ export default function App() {
       unsubShifts();
       unsubHistory();
       unsubEmployees();
+      unsubPenalties();
     };
   }, []);
 
@@ -124,7 +133,6 @@ export default function App() {
           }, { merge: true });
         },
         async () => {
-          // Если геолокация недоступна, всё равно отправляем данные таймера
           await db.collection('shifts').doc(user.email.replace(/[@.]/g, '_')).set({
             name: user.name,
             email: user.email,
@@ -146,7 +154,6 @@ export default function App() {
       const currentSeconds = pausedSeconds + Math.floor((now - startTime) / 1000);
       setTimer(currentSeconds);
       
-      // Обновляем данные в базе каждые 15 секунд
       if (now % 15000 < 1000) {
         updateGeoLocation(currentSeconds, 'Работает', startTime, pausedSeconds);
       }
@@ -249,8 +256,64 @@ export default function App() {
     setShiftStatus(status);
 
     if (status !== 'off' && user && user.role === 'employee') {
-      // Сразу отправляем корректный newStartTime в базу
       await updateGeoLocation(finalTimer, statusText, newStartTime, newPausedSeconds);
+    }
+  };
+
+  // Функция принудительного закрытия зависшей смены владельцем
+  const forceCloseEmployeeShift = async (emp) => {
+    if (!confirm(`Принудительно закрыть смену для ${emp.name}?`)) return;
+    
+    try {
+      // Сохраняем в историю смен
+      await db.collection('shift_history').add({
+        name: emp.name,
+        email: emp.email,
+        totalTime: emp.timer || 0,
+        address: emp.address || 'Адрес не указан (закрыто владельцем)',
+        date: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString() + ' (Принудительно)',
+        timestamp: Date.now()
+      });
+
+      // Удаляем из активных смен
+      await db.collection('shifts').doc(emp.id).delete();
+      alert('Смена успешно принудительно закрыта!');
+    } catch (error) {
+      console.error('Ошибка принудительного закрытия:', error);
+      alert('Не удалось закрыть смену');
+    }
+  };
+
+  // Функция добавления штрафа (минус часы) без дублирования (уникальный ID на основе времени/сотрудника)
+  const applyPenalty = async (empEmail, empName) => {
+    const hoursToDeduct = parseFloat(penaltyHoursInput[empEmail]);
+    const reason = penaltyReasonInput[empEmail] || 'Штраф / Вычет часов';
+
+    if (!hoursToDeduct || isNaN(hoursToDeduct) || hoursToDeduct <= 0) {
+      alert('Введите корректное количество часов для штрафа!');
+      return;
+    }
+
+    const penaltyId = `${empEmail.replace(/[@.]/g, '_')}_${Date.now()}`;
+
+    try {
+      await db.collection('penalties').doc(penaltyId).set({
+        id: penaltyId,
+        email: empEmail,
+        name: empName,
+        hours: hoursToDeduct,
+        reason: reason,
+        date: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString(),
+        timestamp: Date.now()
+      });
+
+      // Сбрасываем поля ввода для этого сотрудника
+      setPenaltyHoursInput({ ...penaltyHoursInput, [empEmail]: '' });
+      setPenaltyReasonInput({ ...penaltyReasonInput, [empEmail]: '' });
+      alert(`Штраф на ${hoursToDeduct} ч. успешно зафиксирован!`);
+    } catch (error) {
+      console.error('Ошибка добавления штрафа:', error);
+      alert('Ошибка при сохранении штрафа');
     }
   };
 
@@ -438,23 +501,71 @@ export default function App() {
               </div>
             </div>
 
+            {/* БАЗА СОТРУДНИКОВ И УПРАВЛЕНИЕ ШТРАФАМИ */}
             <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
-              <h3 className="font-semibold mb-3 text-amber-400">📇 База сотрудников компании ({employeesList.length})</h3>
+              <h3 className="font-semibold mb-3 text-amber-400">📇 База сотрудников и штрафные санкции ({employeesList.length})</h3>
               {employeesList.length === 0 ? <p className="text-xs text-slate-500">В базе пока нет сотрудников</p> : (
-                <div className="space-y-2">
-                  {employeesList.map(emp => (
-                    <div key={emp.id} className="bg-slate-900 p-3 rounded-lg flex justify-between items-center text-sm">
-                      <div>
-                        <span className="font-bold text-white">{emp.name}</span>
-                        <div className="text-xs text-slate-400">{emp.email}</div>
+                <div className="space-y-4">
+                  {employeesList.map(emp => {
+                    const empPenalties = penalties.filter(p => p.email === emp.email);
+                    return (
+                      <div key={emp.id} className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
+                        <div className="flex justify-between items-center text-sm">
+                          <div>
+                            <span className="font-bold text-white text-base">{emp.name}</span>
+                            <div className="text-xs text-slate-400">{emp.email}</div>
+                          </div>
+                          <button onClick={() => deleteItem('employees', emp.id)} className="text-xs bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white px-2.5 py-1 rounded transition">Удалить из базы</button>
+                        </div>
+
+                        {/* Блок наложения штрафа (минус часы) */}
+                        <div className="bg-slate-800/80 p-3 rounded-lg border border-slate-700 space-y-2">
+                          <div className="text-xs font-semibold text-amber-400">⚖️ Начислить штраф (вычет часов):</div>
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <input 
+                              type="number" 
+                              step="0.5" 
+                              placeholder="Часы (например: 1)" 
+                              value={penaltyHoursInput[emp.email] || ''} 
+                              onChange={(e) => setPenaltyHoursInput({ ...penaltyHoursInput, [emp.email]: e.target.value })}
+                              className="bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white sm:w-36"
+                            />
+                            <input 
+                              type="text" 
+                              placeholder="Причина штрафа (опционально)" 
+                              value={penaltyReasonInput[emp.email] || ''} 
+                              onChange={(e) => setPenaltyReasonInput({ ...penaltyReasonInput, [emp.email]: e.target.value })}
+                              className="flex-1 bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white"
+                            />
+                            <button 
+                              onClick={() => applyPenalty(emp.email, emp.name)}
+                              className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded text-xs font-medium transition"
+                            >
+                              Штрафовать
+                            </button>
+                          </div>
+
+                          {/* Список штрафов сотрудника */}
+                          {empPenalties.length > 0 && (
+                            <div className="mt-2 pt-2 border-t border-slate-700 text-xs space-y-1">
+                              <span className="text-red-400 font-semibold">История штрафов:</span>
+                              {empPenalties.map(pen => (
+                                <div key={pen.id} className="flex justify-between items-center bg-slate-900 px-2 py-1 rounded text-slate-300">
+                                  <span>-{pen.hours} ч. ({pen.reason}) — <span className="text-slate-500">{pen.date}</span></span>
+                                  <button onClick={() => deleteItem('penalties', pen.id)} className="text-red-400 hover:text-red-300 ml-2">✕</button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <button onClick={() => deleteItem('employees', emp.id)} className="text-xs bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white px-2.5 py-1 rounded transition">Удалить</button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
 
+            {/* АКТИВНЫЕ СОТРУДНИКИ И КНОПКА ПРИНУДИТЕЛЬНОГО ЗАКРЫТИЯ СМЕНЫ */}
             <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
               <h3 className="font-semibold mb-3 text-amber-400">👷 Активные сотрудники на объектах сейчас</h3>
               {activeEmployees.length === 0 ? <p className="text-xs text-slate-500">Нет работающих в данный момент</p> : (
@@ -462,7 +573,7 @@ export default function App() {
                   {activeEmployees.map(emp => {
                     const liveSec = getEmployeeLiveTimer(emp);
                     return (
-                      <div key={emp.id} className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex flex-col gap-2">
+                      <div key={emp.id} className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex flex-col gap-3">
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                           <div>
                             <div className="font-bold text-white text-base">
@@ -472,6 +583,13 @@ export default function App() {
                               Время работы: {formatTime(liveSec)}
                             </div>
                           </div>
+                          {/* Кнопка принудительного закрытия зависшей смены */}
+                          <button 
+                            onClick={() => forceCloseEmployeeShift(emp)}
+                            className="bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white px-3 py-1.5 rounded-lg text-xs font-medium transition"
+                          >
+                            Закрыть смену принудительно
+                          </button>
                         </div>
 
                         <div className="flex items-center gap-2 pt-2 border-t border-slate-800 text-xs">
