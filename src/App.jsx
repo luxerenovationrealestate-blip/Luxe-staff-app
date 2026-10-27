@@ -43,10 +43,10 @@ export default function App() {
   const [projectsList, setProjectsList] = useState([]);
   const [photoReports, setPhotoReports] = useState([]);
 
-  // Выбранный объект сотрудником для смены
+  // Выбранный объект
   const [selectedProjectId, setSelectedProjectId] = useState(() => localStorage.getItem('luxe_selected_project') || '');
 
-  // Состояния управления
+  // Штрафы
   const [penaltyOpenEmail, setPenaltyOpenEmail] = useState(null);
   const [penaltyHoursInput, setPenaltyHoursInput] = useState({});
   const [penaltyReasonInput, setPenaltyReasonInput] = useState({});
@@ -56,13 +56,14 @@ export default function App() {
   const [issueText, setIssueText] = useState('');
   const [emText, setEmText] = useState('');
 
-  // Создание нового объекта руководителем
+  // Объекты
   const [newProjName, setNewProjName] = useState('');
   const [newProjAddress, setNewProjAddress] = useState('');
 
-  // Загрузка фото в конце дня
+  // Фотоотчет
   const [photoFileBase64, setPhotoFileBase64] = useState('');
   const [photoComment, setPhotoComment] = useState('');
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   const companyEmail = 'luxerenovationrealestate@gmail.com';
 
@@ -168,7 +169,7 @@ export default function App() {
             updatedAt: Date.now()
           }, { merge: true });
         },
-        { enableHighAccuracy: true }
+        { enableHighAccuracy: true, timeout: 5000 }
       );
     }
   };
@@ -232,7 +233,7 @@ export default function App() {
 
     if (status === 'working') {
       if (!selectedProjectId) {
-        alert('Пожалуйста, выберите объект перед стартом смены!');
+        alert('Выберите объект перед стартом смены!');
         return;
       }
       if (shiftStatus !== 'working' || !startTime) {
@@ -262,8 +263,8 @@ export default function App() {
       }
 
       if (timer > 0 && user && user.email !== companyEmail) {
-        // Вычисляем суммарные штрафы для этой смены или сотрудника
-        await db.collection('shift_history').add({
+        const historyId = `${user.email.replace(/[@.]/g, '_')}_${currentTime}`;
+        await db.collection('shift_history').doc(historyId).set({
           name: user.name,
           email: user.email,
           totalTime: timer,
@@ -295,9 +296,10 @@ export default function App() {
   };
 
   const forceCloseEmployeeShift = async (emp) => {
-    if (!confirm(`Закрыть смену для ${emp.name}?`)) return;
+    if (!confirm(`Принудительно закрыть смену для ${emp.name}?`)) return;
     try {
-      await db.collection('shift_history').add({
+      const historyId = `${emp.email.replace(/[@.]/g, '_')}_${Date.now()}`;
+      await db.collection('shift_history').doc(historyId).set({
         name: emp.name,
         email: emp.email,
         totalTime: emp.timer || 0,
@@ -355,53 +357,71 @@ export default function App() {
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    // Сжимаем фото перед отправкой в Firestore
+    const img = new Image();
     const reader = new FileReader();
-    reader.onloadend = () => {
-      setPhotoFileBase64(reader.result);
+
+    reader.onload = (event) => {
+      img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 800;
+        const scaleSize = MAX_WIDTH / img.width;
+        canvas.width = MAX_WIDTH;
+        canvas.height = img.height * scaleSize;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        setPhotoFileBase64(dataUrl);
+      };
     };
     reader.readAsDataURL(file);
   };
 
   const submitPhotoReport = async (e) => {
     e.preventDefault();
-    if (!photoFileBase64) return alert('Выберите фотографию!');
-    
+    if (!photoFileBase64) return alert('Сделайте или выберите фотографию!');
+    setIsUploadingPhoto(true);
+
     let currentAddr = 'Адрес объекта не определен';
     const matchedProj = projectsList.find(p => p.id === selectedProjectId);
     if (matchedProj) currentAddr = `${matchedProj.name} (${matchedProj.address})`;
 
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(async (pos) => {
+    const saveReport = async (lat = null, lng = null) => {
+      try {
         await db.collection('photo_reports').add({
           userName: user.name,
           userEmail: user.email,
           image: photoFileBase64,
           comment: photoComment || 'Отчет за смену',
           address: currentAddr,
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
+          lat: lat,
+          lng: lng,
           date: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString(),
           timestamp: Date.now()
         });
         setPhotoFileBase64('');
         setPhotoComment('');
         alert('Фотоотчет успешно отправлен руководителю!');
-      }, async () => {
-        await db.collection('photo_reports').add({
-          userName: user.name,
-          userEmail: user.email,
-          image: photoFileBase64,
-          comment: photoComment || 'Отчет за смену',
-          address: currentAddr,
-          date: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString(),
-          timestamp: Date.now()
-        });
-        setPhotoFileBase64('');
-        setPhotoComment('');
-        alert('Фотоотчет отправлен (без точного GPS)!');
-      });
+      } catch (err) {
+        console.error('Ошибка отправки:', err);
+        alert('Ошибка при отправке фотоотчета. Попробуйте снова.');
+      } finally {
+        setIsUploadingPhoto(false);
+      }
+    };
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => saveReport(pos.coords.latitude, pos.coords.longitude),
+        () => saveReport(),
+        { timeout: 3500 }
+      );
     } else {
-      alert('Геолокация не поддерживается устройством');
+      saveReport();
     }
   };
 
@@ -465,7 +485,7 @@ export default function App() {
     return emp.timer || 0;
   };
 
-  // 1. АВТОРИЗАЦИЯ (Liquid Glass стиль с молочным фоном и золотом)
+  // ЭКРАН ВХОДА
   if (!user) {
     return (
       <div className="min-h-screen bg-[#F9F8F6] flex items-center justify-center p-4 font-sans text-slate-900 relative overflow-hidden">
@@ -515,7 +535,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#F9F8F6] text-slate-900 font-sans antialiased pb-12">
-      {/* 2. ШАПКА В СТИЛЕ LIQUID GLASS */}
+      {/* ШАПКА */}
       <header className="bg-white/70 backdrop-blur-2xl border-b border-amber-500/30 px-5 py-3.5 sticky top-0 z-50 flex justify-between items-center shadow-lg shadow-emerald-950/5">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#14382B] to-[#1E3F20] flex items-center justify-center text-amber-400 font-black text-xs shadow-md border border-amber-500/30">LR</div>
@@ -530,7 +550,7 @@ export default function App() {
       <main className="max-w-3xl mx-auto p-4 space-y-4">
         {!isOwner ? (
           <>
-            {/* 3. КАБИНЕТ СОТРУДНИКА (Выбор объекта + Таймер + Загрузка фото) */}
+            {/* КАБИНЕТ СОТРУДНИКА */}
             <div className="bg-white/70 backdrop-blur-2xl border border-amber-500/30 p-6 rounded-[2.5rem] shadow-xl text-center space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2 text-left">🏗️ Выберите рабочий объект:</label>
@@ -558,20 +578,41 @@ export default function App() {
               </div>
             </div>
 
-            {/* Блок отправки фотоотчета в конце дня с геопозицией */}
+            {/* БЛОК ОТПРАВКИ ФОТООТЧЕТА С КАМЕРЫ ИЛИ ИЗ ГАЛЕРЕИ */}
             <div className="bg-white/70 backdrop-blur-2xl border border-amber-500/30 p-5 rounded-[2.5rem] shadow-xl space-y-3">
-              <h3 className="text-xs font-bold text-[#14382B] uppercase tracking-wider">📸 Фотоотчет объекта по окончании дня</h3>
-              <p className="text-[11px] text-slate-600">Прикрепите фото выполненных работ. Геопозиция и адрес объекта зафиксируются автоматически.</p>
+              <h3 className="text-xs font-bold text-[#14382B] uppercase tracking-wider">📸 Сделать фото или загрузить отчёт</h3>
+              <p className="text-[11px] text-slate-600">Нажмите на кнопку ниже, чтобы сделать снимок с камеры или выбрать изображение.</p>
               
               <form onSubmit={submitPhotoReport} className="space-y-3 text-xs">
-                <input type="file" accept="image/*" onChange={handleImageUpload} className="w-full bg-[#F9F8F6] border border-slate-300 rounded-2xl p-2.5 text-xs text-slate-700 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#14382B] file:text-amber-400 hover:file:bg-emerald-900 cursor-pointer" />
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  capture="environment"
+                  onChange={handleImageUpload} 
+                  className="w-full bg-[#F9F8F6] border border-slate-300 rounded-2xl p-2.5 text-xs text-slate-700 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#14382B] file:text-amber-400 hover:file:bg-emerald-900 cursor-pointer" 
+                />
+                
                 {photoFileBase64 && (
-                  <div className="relative w-full h-36 rounded-2xl overflow-hidden border border-slate-300">
+                  <div className="relative w-full h-44 rounded-2xl overflow-hidden border border-slate-300 shadow-sm">
                     <img src={photoFileBase64} alt="Preview" className="w-full h-full object-cover" />
                   </div>
                 )}
-                <input type="text" placeholder="Комментарий к фото (например: Укладка плитки закончена)" value={photoComment} onChange={e => setPhotoComment(e.target.value)} className="w-full bg-[#F9F8F6] border border-slate-300 rounded-2xl p-3 text-xs text-slate-900 outline-none focus:border-[#14382B]" />
-                <button type="submit" className="w-full bg-[#14382B] hover:bg-emerald-900 text-amber-400 font-bold py-3 rounded-2xl transition shadow-md">Отправить фотоотчет руководителю</button>
+                
+                <input 
+                  type="text" 
+                  placeholder="Комментарий (напр.: Завершен малярный этап)" 
+                  value={photoComment} 
+                  onChange={e => setPhotoComment(e.target.value)} 
+                  className="w-full bg-[#F9F8F6] border border-slate-300 rounded-2xl p-3 text-xs text-slate-900 outline-none focus:border-[#14382B]" 
+                />
+                
+                <button 
+                  type="submit" 
+                  disabled={isUploadingPhoto} 
+                  className="w-full bg-[#14382B] hover:bg-emerald-900 text-amber-400 font-bold py-3.5 rounded-2xl transition shadow-md disabled:opacity-50"
+                >
+                  {isUploadingPhoto ? 'Отправка фотоотчета...' : 'Отправить фотоотчет руководителю'}
+                </button>
               </form>
             </div>
 
@@ -595,9 +636,8 @@ export default function App() {
             </div>
           </>
         ) : (
-          /* 4. ПАНЕЛЬ ВЛАДЕЛЬЦА (Liquid Glass Admin) */
+          /* ПАНЕЛЬ ВЛАДЕЛЬЦА */
           <div className="space-y-4">
-            {/* Сводка */}
             <div className="bg-white/70 backdrop-blur-2xl border border-amber-500/30 p-5 rounded-[2.5rem] shadow-xl">
               <h2 className="text-[11px] font-bold uppercase tracking-widest text-slate-600 mb-3">Панель Руководителя Luxe Renovation</h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 text-center">
@@ -620,7 +660,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* УПРАВЛЕНИЕ ОБЪЕКТАМИ (Справочник адресов) */}
+            {/* СПРАВОЧНИК ОБЪЕКТОВ */}
             <div className="bg-white/70 backdrop-blur-2xl border border-amber-500/30 p-5 rounded-[2.5rem] shadow-xl">
               <h3 className="text-xs font-bold uppercase tracking-wider text-[#14382B] mb-3">🏢 Справочник строительных объектов</h3>
               <form onSubmit={addProject} className="grid sm:grid-cols-2 gap-2.5 mb-3 text-xs">
@@ -643,7 +683,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Активные смены в реальном времени */}
+            {/* МОНИТОРИНГ СМЕН ОНЛАЙН */}
             <div className="bg-white/70 backdrop-blur-2xl border border-amber-500/30 p-5 rounded-[2.5rem] shadow-xl">
               <h3 className="text-xs font-bold uppercase tracking-wider text-[#14382B] mb-3 flex items-center justify-between">
                 <span>⚡ Мониторинг сотрудников онлайн</span>
@@ -674,7 +714,7 @@ export default function App() {
               )}
             </div>
 
-            {/* ГАЛЕРЕЯ ФОТООТЧЕТОВ С ОБЪЕКТОВ */}
+            {/* ГАЛЕРЕЯ ФОТООТЧЕТОВ */}
             <div className="bg-white/70 backdrop-blur-2xl border border-amber-500/30 p-5 rounded-[2.5rem] shadow-xl">
               <h3 className="text-xs font-bold uppercase tracking-wider text-[#14382B] mb-3">🖼️ Галерея фотоотчетов сотрудников</h3>
               {photoReports.length === 0 ? <p className="text-xs text-slate-500">Фотоотчетов пока нет</p> : (
@@ -697,7 +737,7 @@ export default function App() {
               )}
             </div>
 
-            {/* База сотрудников и штрафные санкции */}
+            {/* БАЗА СОТРУДНИКОВ И ШТРАФЫ */}
             <div className="bg-white/70 backdrop-blur-2xl border border-amber-500/30 p-5 rounded-[2.5rem] shadow-xl">
               <h3 className="text-xs font-bold uppercase tracking-wider text-[#14382B] mb-3">👥 База сотрудников и штрафные санкции</h3>
               {employeesList.length === 0 ? <p className="text-xs text-slate-500">Сотрудников нет</p> : (
@@ -760,7 +800,7 @@ export default function App() {
               )}
             </div>
 
-            {/* История смен с адресами и временем */}
+            {/* АРХИВ СМЕН */}
             <div className="bg-white/70 backdrop-blur-2xl border border-amber-500/30 p-5 rounded-[2.5rem] shadow-xl">
               <h3 className="text-xs font-bold uppercase tracking-wider text-[#14382B] mb-3">📊 Архив отработанных смен</h3>
               {shiftHistory.length === 0 ? <p className="text-xs text-slate-500">Архив пуст</p> : (
@@ -781,7 +821,7 @@ export default function App() {
               )}
             </div>
 
-            {/* Материалы и обращения */}
+            {/* МАТЕРИАЛЫ И ОБРАЩЕНИЯ */}
             <div className="grid md:grid-cols-2 gap-3">
               <div className="bg-white/70 backdrop-blur-2xl border border-amber-500/30 p-4 rounded-[2.5rem] shadow-xl">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-[#14382B] mb-3">📦 Заказы материалов</h3>
