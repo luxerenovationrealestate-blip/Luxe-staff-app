@@ -14,7 +14,7 @@
     <header class="flex flex-col sm:flex-row justify-between items-center bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-6 shadow-xl">
       <div>
         <h1 class="text-2xl font-bold text-amber-400">Luxe Renovation</h1>
-        <p class="text-sm text-slate-400">Система учета рабочего времени · Геолокация + Облако Firestore</p>
+        <p class="text-sm text-slate-400">Система учета рабочего времени · Авто-адрес объекта + Облако</p>
         <p id="sync-status" class="text-xs text-emerald-400 mt-1">● Подключение к базе...</p>
       </div>
       <div class="mt-4 sm:mt-0 flex gap-2">
@@ -29,15 +29,32 @@
         <h2 class="text-xl font-semibold mb-4 text-slate-200">Регистрация рабочего времени</h2>
         <div class="space-y-4">
           <div>
-            <label class="block text-sm font-medium text-slate-400 mb-1">Выберите сотрудника:</label>
-            <select id="emp-select" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-slate-100 focus:outline-none focus:border-amber-400"></select>
+            <label class="block text-sm font-medium text-slate-400 mb-1">Сотрудник:</label>
+            <div class="flex gap-2">
+              <select id="emp-select" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-slate-100 focus:outline-none focus:border-amber-400"></select>
+              <button type="button" onclick="quickRegisterEmployee()" class="bg-slate-700 hover:bg-slate-600 text-amber-300 font-semibold px-4 rounded-xl whitespace-nowrap transition">+ Новый</button>
+            </div>
           </div>
+
+          <!-- Автоматический адрес объекта (не блокирует старт смены) -->
+          <div class="bg-slate-900/80 border border-slate-700 rounded-xl p-3.5">
+            <div class="flex justify-between items-center gap-2 mb-1">
+              <span class="text-xs font-medium text-slate-400">Адрес объекта (определяется автоматически):</span>
+              <button type="button" onclick="detectAndSyncAddress()" class="text-xs text-amber-400 hover:underline">🔄 Обновить адрес</button>
+            </div>
+            <input type="text" id="auto-site-address" placeholder="Определяем адрес по GPS..." class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-emerald-300 focus:outline-none focus:border-amber-400">
+            <div class="mt-2">
+              <label class="block text-[11px] text-slate-500 mb-1">Сохранённые объекты (добавляются автоматически):</label>
+              <select id="site-select" onchange="onSiteSelectChange()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300"></select>
+            </div>
+          </div>
+
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <button type="button" onclick="logAction('Приход')" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold p-4 rounded-xl shadow transition text-lg">🟢 Начало работы</button>
             <button type="button" onclick="logAction('Обед')" class="bg-amber-600 hover:bg-amber-500 text-white font-bold p-4 rounded-xl shadow transition text-lg">🥪 Обед / Перерыв</button>
             <button type="button" onclick="logAction('Уход')" class="bg-rose-600 hover:bg-rose-500 text-white font-bold p-4 rounded-xl shadow transition text-lg">🔴 Конец работы</button>
           </div>
-          <p id="geo-hint" class="text-xs text-slate-400">📍 Геолокация фиксируется автоматически при каждой отметке.</p>
+          <p id="geo-hint" class="text-xs text-slate-400">📍 Если адрес не выбран — система сама определит его по GPS и добавит в объекты.</p>
         </div>
       </div>
 
@@ -50,7 +67,7 @@
                 <th class="p-3">Время</th>
                 <th class="p-3">Сотрудник</th>
                 <th class="p-3">Статус</th>
-                <th class="p-3">Геолокация</th>
+                <th class="p-3">Объект / Геолокация</th>
               </tr>
             </thead>
             <tbody id="my-logs-table" class="text-slate-300 divide-y divide-slate-700/50"></tbody>
@@ -74,6 +91,12 @@
           <div id="emp-list-chips" class="flex flex-wrap gap-2 mt-3"></div>
         </div>
 
+        <!-- Auto-detected Site Addresses -->
+        <div class="mb-6 pb-6 border-b border-slate-700">
+          <h3 class="text-md font-medium text-slate-300 mb-2">Объекты (добавляются автоматически при отметках)</h3>
+          <div id="site-list-chips" class="flex flex-wrap gap-2"></div>
+        </div>
+
         <!-- All Logs Table -->
         <div class="flex flex-wrap justify-between items-center gap-2 mb-3">
           <h3 class="text-md font-medium text-slate-300">Все записи сотрудников (В реальном времени)</h3>
@@ -86,7 +109,7 @@
                 <th class="p-3">Дата и Время</th>
                 <th class="p-3">Сотрудник</th>
                 <th class="p-3">Действие</th>
-                <th class="p-3">Геолокация</th>
+                <th class="p-3">Объект / Геолокация</th>
                 <th class="p-3 text-right">Управление</th>
               </tr>
             </thead>
@@ -108,7 +131,10 @@ const app = initializeApp(FIREBASE_CONFIG);
 const db = getFirestore(app);
 
 const DEFAULT_EMPS = ['Иван Петров', 'Андрей Шевченко'];
+const DEFAULT_SITES = ['Lyngbyvej 83A, 2100 København Ø'];
+
 let employees = JSON.parse(localStorage.getItem('luxe_emps_backup')) || [...DEFAULT_EMPS];
+let sites = JSON.parse(localStorage.getItem('luxe_sites_backup')) || [...DEFAULT_SITES];
 let logs = JSON.parse(localStorage.getItem('luxe_logs_backup')) || [];
 
 function setStatus(text, ok = true) {
@@ -119,6 +145,7 @@ function setStatus(text, ok = true) {
 
 function saveLocalBackup() {
   localStorage.setItem('luxe_emps_backup', JSON.stringify(employees));
+  localStorage.setItem('luxe_sites_backup', JSON.stringify(sites));
   localStorage.setItem('luxe_logs_backup', JSON.stringify(logs));
 }
 
@@ -126,40 +153,129 @@ function getTodayDateStr() {
   return new Date().toISOString().substring(0, 10);
 }
 
-function getCurrentGeo() {
+async function reverseGeocode(lat, lng) {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+      { headers: { 'Accept-Language': 'da,ru,en' } }
+    );
+    if (!res.ok) throw new Error('Geocode HTTP error');
+    const data = await res.json();
+    const a = data.address || {};
+    const road = a.road || a.pedestrian || a.street || '';
+    const house = a.house_number ? ` ${a.house_number}` : '';
+    const postcode = a.postcode ? `${a.postcode} ` : '';
+    const city = a.city || a.town || a.village || a.suburb || '';
+    const streetPart = `${road}${house}`.trim();
+    const cityPart = `${postcode}${city}`.trim();
+    const formatted = [streetPart, cityPart].filter(Boolean).join(', ');
+    return formatted || data.display_name || `${lat}, ${lng}`;
+  } catch {
+    return `${lat}, ${lng}`;
+  }
+}
+
+function getCurrentGeoAndAddress() {
   return new Promise((resolve) => {
+    const fallbackAddr = document.getElementById('auto-site-address').value.trim() || DEFAULT_SITES[0];
     if (!navigator.geolocation) {
-      resolve({ status: 'unavailable', label: 'GPS не поддерживается' });
+      resolve({
+        geo: { status: 'unavailable', label: 'GPS не поддерживается' },
+        address: fallbackAddr
+      });
       return;
     }
+
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
+      async (pos) => {
         const lat = Number(pos.coords.latitude.toFixed(6));
         const lng = Number(pos.coords.longitude.toFixed(6));
         const acc = Math.round(pos.coords.accuracy || 0);
+        const addr = await reverseGeocode(lat, lng);
         resolve({
-          status: 'ok',
-          lat,
-          lng,
-          accuracy: acc,
-          mapsUrl: `https://www.google.com/maps?q=${lat},${lng}`,
-          label: `${lat}, ${lng} (±${acc}м)`
+          geo: {
+            status: 'ok',
+            lat,
+            lng,
+            accuracy: acc,
+            mapsUrl: `https://www.google.com/maps?q=${lat},${lng}`,
+            label: `${lat}, ${lng} (±${acc}м)`
+          },
+          address: addr || `${lat}, ${lng}`
         });
       },
       (err) => {
         const reason = err.code === 1 ? 'Доступ к GPS запрещён' : 'Геопозиция недоступна';
-        resolve({ status: 'denied', label: reason });
+        resolve({
+          geo: { status: 'denied', label: reason },
+          address: fallbackAddr
+        });
       },
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 15000 }
     );
   });
 }
 
-function renderGeoCell(geo) {
-  if (geo && geo.mapsUrl) {
-    return `<a href="${geo.mapsUrl}" target="_blank" rel="noopener" class="text-amber-400 hover:underline text-xs font-medium">📍 Карта (${geo.lat.toFixed(4)}, ${geo.lng.toFixed(4)})</a>`;
+async function addSiteAutomatically(rawAddress) {
+  const addr = String(rawAddress || '').trim();
+  if (!addr) return;
+  if (!sites.includes(addr)) {
+    sites.unshift(addr);
+    saveLocalBackup();
+    render();
+    try {
+      await setDoc(doc(db, 'site_addresses', encodeURIComponent(addr)), {
+        address: addr,
+        autoAdded: true,
+        updated: Date.now()
+      });
+    } catch (e) {
+      console.error(e);
+    }
   }
-  return `<span class="text-slate-500 text-xs">${(geo && geo.label) || 'Нет данных'}</span>`;
+}
+
+window.detectAndSyncAddress = async function() {
+  const input = document.getElementById('auto-site-address');
+  input.value = 'Определяем адрес по GPS...';
+  const { address } = await getCurrentGeoAndAddress();
+  input.value = address;
+  await addSiteAutomatically(address);
+};
+
+window.onSiteSelectChange = function() {
+  const sel = document.getElementById('site-select');
+  if (sel.value) {
+    document.getElementById('auto-site-address').value = sel.value;
+  }
+};
+
+window.quickRegisterEmployee = async function() {
+  const name = prompt('Введите имя и фамилию нового сотрудника:');
+  if (!name || !name.trim()) return;
+  const clean = name.trim();
+  if (!employees.includes(clean)) {
+    employees.push(clean);
+    saveLocalBackup();
+    render();
+    try {
+      await setDoc(doc(db, 'employees', encodeURIComponent(clean)), { name: clean, updated: Date.now() });
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  document.getElementById('emp-select').value = clean;
+};
+
+function renderLocationCell(log) {
+  const siteHtml = log.siteAddress
+    ? `<div class="text-xs text-slate-200 font-medium">${log.siteAddress}</div>`
+    : '';
+  const geo = log.geo;
+  const geoHtml = (geo && geo.mapsUrl)
+    ? `<a href="${geo.mapsUrl}" target="_blank" rel="noopener" class="text-amber-400 hover:underline text-xs">📍 Карта (${geo.lat.toFixed(4)}, ${geo.lng.toFixed(4)})</a>`
+    : `<span class="text-slate-500 text-xs">${(geo && geo.label) || 'Без GPS'}</span>`;
+  return `${siteHtml}${geoHtml}`;
 }
 
 window.switchTab = function(tab) {
@@ -207,21 +323,26 @@ window.removeEmployee = async function(name) {
 };
 
 window.logAction = async function(action) {
-  const empName = document.getElementById('emp-select').value;
+  let empName = document.getElementById('emp-select').value;
   if (!empName) {
-    alert('Пожалуйста, выберите сотрудника!');
-    return;
+    empName = employees[0] || 'Новый сотрудник';
   }
 
   const hint = document.getElementById('geo-hint');
-  hint.textContent = '📍 Определяем геолокацию и сохраняем отметку...';
+  hint.textContent = '📍 Автоматически определяем адрес объекта и сохраняем смену...';
 
-  const geo = await getCurrentGeo();
+  const { geo, address } = await getCurrentGeoAndAddress();
+  const finalAddress = address || DEFAULT_SITES[0];
+  document.getElementById('auto-site-address').value = finalAddress;
+
+  await addSiteAutomatically(finalAddress);
+
   const now = new Date();
   const record = {
     localId: String(Date.now()),
     employee: empName,
     action,
+    siteAddress: finalAddress,
     date: getTodayDateStr(),
     time: now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
     timestamp: now.toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'medium' }),
@@ -233,15 +354,13 @@ window.logAction = async function(action) {
   saveLocalBackup();
   render();
 
-  hint.textContent = geo.mapsUrl
-    ? `📍 Геолокация сохранена: ${geo.label}`
-    : `📍 Отметка сохранена (${geo.label})`;
+  hint.textContent = `📍 Смена зафиксирована · Объект: ${finalAddress}`;
 
   try {
     const docRef = await addDoc(collection(db, 'time_logs'), record);
     record.id = docRef.id;
     saveLocalBackup();
-    setStatus('● Отметка и геопозиция сохранены в облаке', true);
+    setStatus('● Смена, адрес и геопозиция сохранены в облаке', true);
   } catch (e) {
     setStatus('● Сохранено локально (будет синхронизировано)', false);
   }
@@ -262,7 +381,7 @@ window.deleteLog = async function(docId, localId) {
 };
 
 window.exportBackup = function() {
-  const dataStr = JSON.stringify({ exportedAt: new Date().toISOString(), employees, logs }, null, 2);
+  const dataStr = JSON.stringify({ exportedAt: new Date().toISOString(), employees, sites, logs }, null, 2);
   const blob = new Blob([dataStr], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -273,15 +392,32 @@ window.exportBackup = function() {
 };
 
 function render() {
+  if (!employees.length) employees = [...DEFAULT_EMPS];
+  if (!sites.length) sites = [...DEFAULT_SITES];
+
   const sel = document.getElementById('emp-select');
   const currentSel = sel.value;
   sel.innerHTML = employees.map(e => `<option value="${e}">${e}</option>`).join('');
   if (currentSel && employees.includes(currentSel)) sel.value = currentSel;
 
+  const siteSel = document.getElementById('site-select');
+  siteSel.innerHTML = sites.map(s => `<option value="${s}">${s}</option>`).join('');
+
+  const addrInput = document.getElementById('auto-site-address');
+  if (!addrInput.value || addrInput.value === 'Определяем адрес по GPS...') {
+    addrInput.value = sites[0] || DEFAULT_SITES[0];
+  }
+
   document.getElementById('emp-list-chips').innerHTML = employees.map(e => `
     <span class="inline-flex items-center gap-2 bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-xl text-sm">
       ${e}
       <button type="button" onclick="removeEmployee('${e.replace(/'/g, "\\'")}')" class="text-rose-400 hover:text-rose-300 font-bold">×</button>
+    </span>
+  `).join('');
+
+  document.getElementById('site-list-chips').innerHTML = sites.map(s => `
+    <span class="inline-flex items-center bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-xl text-xs text-slate-300">
+      📍 ${s}
     </span>
   `).join('');
 
@@ -292,7 +428,7 @@ function render() {
       <td class="p-3">${l.time || l.timestamp}</td>
       <td class="p-3 font-medium">${l.employee}</td>
       <td class="p-3">${l.action}</td>
-      <td class="p-3">${renderGeoCell(l.geo)}</td>
+      <td class="p-3">${renderLocationCell(l)}</td>
     </tr>
   `).join('') || `<tr><td colspan="4" class="p-4 text-center text-slate-500">Сегодня отметок пока нет</td></tr>`;
 
@@ -301,7 +437,7 @@ function render() {
       <td class="p-3">${l.timestamp}</td>
       <td class="p-3 font-medium">${l.employee}</td>
       <td class="p-3">${l.action}</td>
-      <td class="p-3">${renderGeoCell(l.geo)}</td>
+      <td class="p-3">${renderLocationCell(l)}</td>
       <td class="p-3 text-right">
         <button type="button" onclick="deleteLog('${l.id || ''}', '${l.localId || ''}')" class="text-rose-400 hover:bg-rose-500/20 px-2 py-1 rounded-lg transition">🗑️</button>
       </td>
@@ -325,11 +461,23 @@ onSnapshot(collection(db, 'employees'), (snap) => {
   render();
 });
 
+onSnapshot(collection(db, 'site_addresses'), (snap) => {
+  if (!snap.empty) {
+    const cloudSites = snap.docs.map(d => d.data().address).filter(Boolean);
+    sites = [...new Set([...cloudSites, ...sites])];
+    saveLocalBackup();
+    render();
+  }
+});
+
 onSnapshot(collection(db, 'time_logs'), (snap) => {
   const cloudLogs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   cloudLogs.sort((a, b) => Number(b.created || 0) - Number(a.created || 0));
   if (cloudLogs.length > 0 || snap.metadata.fromCache === false) {
     logs = cloudLogs;
+    cloudLogs.forEach(l => {
+      if (l.siteAddress && !sites.includes(l.siteAddress)) sites.unshift(l.siteAddress);
+    });
     saveLocalBackup();
   }
   setStatus('● Облачная память активна (Firestore)', true);
@@ -340,7 +488,7 @@ onSnapshot(collection(db, 'time_logs'), (snap) => {
 });
 
 render();
+detectAndSyncAddress();
 </script>
 </body>
 </html>
-
