@@ -22,8 +22,8 @@
 
     <script>
       (function () {
-        const COMPANY_ADDR = 'Lyngbyvej 83A, 2100 København Ø';
         let currentLiveAddress = '';
+        let currentGeoData = null;
         let gpsPromise = null;
 
         function isCompanyAddress(str) {
@@ -85,7 +85,6 @@
         function applyAddressToSelects(addr) {
           if (!addr || isCompanyAddress(addr)) return;
           document.querySelectorAll('select').forEach((sel) => {
-            // Удаляем навязанный адрес компании из опций, если он там появился
             Array.from(sel.options).forEach((o) => {
               if (isCompanyAddress(o.value) || isCompanyAddress(o.textContent)) {
                 o.remove();
@@ -109,8 +108,9 @@
 
           gpsPromise = new Promise((resolve) => {
             if (!navigator.geolocation) {
-              const fallback = currentLiveAddress || 'Локация без GPS';
-              resolve(fallback);
+              const fallbackAddr = currentLiveAddress || 'Локация без GPS';
+              const fallbackData = currentGeoData || { status: 'unavailable', address: fallbackAddr, label: fallbackAddr };
+              resolve(fallbackData);
               return;
             }
 
@@ -118,17 +118,31 @@
               async (pos) => {
                 const lat = Number(pos.coords.latitude.toFixed(6));
                 const lng = Number(pos.coords.longitude.toFixed(6));
+                const acc = Math.round(pos.coords.accuracy || 0);
                 const addr = await reverseAddress(lat, lng);
                 const finalAddr = addr && !isCompanyAddress(addr) ? addr : `${lat}, ${lng}`;
+                const data = {
+                  status: 'ok',
+                  lat,
+                  lng,
+                  accuracy: acc,
+                  address: finalAddr,
+                  mapsUrl: `https://www.google.com/maps?q=${lat},${lng}`,
+                  label: `${finalAddr} (${lat}, ${lng})`
+                };
+                currentGeoData = data;
+                localStorage.setItem('luxe_live_geo', JSON.stringify(data));
                 saveDetectedSite(finalAddr);
                 applyAddressToSelects(finalAddr);
                 gpsPromise = null;
-                resolve(finalAddr);
+                resolve(data);
               },
               () => {
-                const fallback = currentLiveAddress || 'Локация (GPS не подтверждён)';
+                const fallbackAddr = currentLiveAddress || 'Локация (GPS не подтверждён)';
+                const data = { status: 'denied', address: fallbackAddr, label: fallbackAddr };
+                currentGeoData = data;
                 gpsPromise = null;
-                resolve(fallback);
+                resolve(data);
               },
               { enableHighAccuracy: true, timeout: 9000, maximumAge: forceFresh ? 0 : 10000 }
             );
@@ -137,22 +151,168 @@
           return gpsPromise;
         }
 
-        // При клике на кнопку старта смены сначала получаем актуальный адрес человека по GPS
+        // Штамп геопозиции и времени прямо на фото отчёта
+        function stampPhotoWithGeo(file, geoInfo) {
+          return new Promise((resolve) => {
+            if (!file || !file.type || !file.type.startsWith('image/')) {
+              resolve(file);
+              return;
+            }
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+              const img = new Image();
+              img.onload = () => {
+                try {
+                  const canvas = document.createElement('canvas');
+                  canvas.width = img.width;
+                  canvas.height = img.height;
+                  const ctx = canvas.getContext('2d');
+                  ctx.drawImage(img, 0, 0);
+
+                  const nowStr = new Date().toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
+                  const line1 = `📍 ${geoInfo.address || 'Геолокация'}`;
+                  const line2 = geoInfo.lat && geoInfo.lng
+                    ? `GPS: ${geoInfo.lat}, ${geoInfo.lng} · ${nowStr}`
+                    : `${geoInfo.label || ''} · ${nowStr}`;
+
+                  const barHeight = Math.max(54, Math.round(canvas.height * 0.075));
+                  ctx.fillStyle = 'rgba(15, 23, 42, 0.78)';
+                  ctx.fillRect(0, canvas.height - barHeight, canvas.width, barHeight);
+
+                  const fontSize = Math.max(14, Math.round(barHeight * 0.28));
+                  ctx.font = `600 ${fontSize}px sans-serif`;
+                  ctx.fillStyle = '#fbbf24';
+                  ctx.fillText(line1, 16, canvas.height - barHeight + fontSize + 6);
+
+                  ctx.font = `400 ${Math.max(12, Math.round(fontSize * 0.85))}px sans-serif`;
+                  ctx.fillStyle = '#f8fafc';
+                  ctx.fillText(line2, 16, canvas.height - 10);
+
+                  canvas.toBlob((blob) => {
+                    if (!blob) {
+                      resolve(file);
+                      return;
+                    }
+                    const stampedFile = new File([blob], file.name || 'photo-report.jpg', {
+                      type: blob.type || file.type || 'image/jpeg',
+                      lastModified: Date.now()
+                    });
+                    resolve(stampedFile);
+                  }, 'image/jpeg', 0.9);
+                } catch {
+                  resolve(file);
+                }
+              };
+              img.onerror = () => resolve(file);
+              img.src = ev.target.result;
+            };
+            reader.onerror = () => resolve(file);
+            reader.readAsDataURL(file);
+          });
+        }
+
+        function appendGeoToVisibleTextInputs(geoInfo) {
+          const textToAdd = geoInfo.lat && geoInfo.lng
+            ? `📍 ${geoInfo.address} (${geoInfo.lat}, ${geoInfo.lng})`
+            : `📍 ${geoInfo.address}`;
+
+          document.querySelectorAll('input[type="text"], textarea').forEach((el) => {
+            const ph = (el.placeholder || '').toLowerCase();
+            if (ph.includes('адрес') || ph.includes('описание') || ph.includes('комментар') || ph.includes('отчет') || ph.includes('отчёт')) {
+              if (!el.value.includes(geoInfo.address) && !el.value.includes('📍')) {
+                const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+                  || Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+                const nextVal = el.value.trim() ? `${el.value.trim()} | ${textToAdd}` : textToAdd;
+                if (setter) {
+                  setter.call(el, nextVal);
+                } else {
+                  el.value = nextVal;
+                }
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+              }
+            }
+          });
+        }
+
+        function savePhotoReportGeoLog(geoInfo, fileName = 'photo-report') {
+          try {
+            const key = 'luxe_photo_geo_logs';
+            const existing = JSON.parse(localStorage.getItem(key) || '[]');
+            existing.unshift({
+              id: String(Date.now()),
+              fileName,
+              address: geoInfo.address,
+              lat: geoInfo.lat || null,
+              lng: geoInfo.lng || null,
+              mapsUrl: geoInfo.mapsUrl || null,
+              createdAt: new Date().toISOString()
+            });
+            localStorage.setItem(key, JSON.stringify(existing.slice(0, 200)));
+
+            if (window.firebase && window.firebase.apps && window.firebase.apps.length > 0 && window.firebase.firestore) {
+              window.firebase.firestore().collection('photo_reports_geo').add({
+                fileName,
+                address: geoInfo.address,
+                lat: geoInfo.lat || null,
+                lng: geoInfo.lng || null,
+                mapsUrl: geoInfo.mapsUrl || null,
+                createdAt: new Date().toISOString(),
+                timestamp: Date.now()
+              }).catch(() => {});
+            }
+          } catch {}
+        }
+
+        // При выборе фото в input[type="file"]
+        document.addEventListener('change', async (e) => {
+          const input = e.target;
+          if (!input || input.type !== 'file' || !input.files || !input.files.length) return;
+
+          const geoInfo = await fetchLiveGPS(true);
+          appendGeoToVisibleTextInputs(geoInfo);
+
+          const dt = new DataTransfer();
+          let changed = false;
+          for (const f of Array.from(input.files)) {
+            if (f.type && f.type.startsWith('image/')) {
+              const stamped = await stampPhotoWithGeo(f, geoInfo);
+              dt.items.add(stamped);
+              savePhotoReportGeoLog(geoInfo, f.name);
+              changed = true;
+            } else {
+              dt.items.add(f);
+            }
+          }
+          if (changed) {
+            input.files = dt.files;
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }, true);
+
+        // При клике на кнопки старта смены или отправки фотоотчёта
         document.addEventListener('click', async (e) => {
           const btn = e.target.closest('button');
           if (!btn) return;
           const label = (btn.textContent || '').trim().toLowerCase();
           if (label.includes('старт') || label.includes('начать') || label.includes('смен')) {
-            const addr = await fetchLiveGPS(true);
-            applyAddressToSelects(addr);
+            const geoInfo = await fetchLiveGPS(true);
+            applyAddressToSelects(geoInfo.address);
+          } else if (label.includes('фото') || label.includes('отправ') || label.includes('сохран') || label.includes('добав')) {
+            const hasFileInput = document.querySelector('input[type="file"]');
+            if (hasFileInput) {
+              const geoInfo = await fetchLiveGPS(true);
+              appendGeoToVisibleTextInputs(geoInfo);
+              savePhotoReportGeoLog(geoInfo, 'photo-report');
+            }
           }
         }, true);
 
         const origAlert = window.alert.bind(window);
         window.alert = async function (msg) {
           if (typeof msg === 'string' && msg.toLowerCase().includes('объект')) {
-            const addr = await fetchLiveGPS(true);
-            applyAddressToSelects(addr);
+            const geoInfo = await fetchLiveGPS(true);
+            applyAddressToSelects(geoInfo.address);
             return;
           }
           return origAlert(msg);
