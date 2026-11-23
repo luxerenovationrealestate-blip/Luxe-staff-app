@@ -22,114 +22,150 @@
 
     <script>
       (function () {
-        const FALLBACK_SITE = 'Lyngbyvej 83A, 2100 København Ø';
-        let detectedSite = localStorage.getItem('luxe_auto_site') || FALLBACK_SITE;
+        const COMPANY_ADDR = 'Lyngbyvej 83A, 2100 København Ø';
+        let currentLiveAddress = '';
+        let gpsPromise = null;
+
+        function isCompanyAddress(str) {
+          if (!str) return false;
+          const s = String(str).toLowerCase();
+          return s.includes('lyngbyvej 83a') || s.includes('2100 københavn ø') || s.includes('2100 kobenhavn o');
+        }
 
         async function reverseAddress(lat, lng) {
           try {
-            const r = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
-              { headers: { 'Accept-Language': 'da,ru,en' } }
-            );
+            const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}&zoom=18&addressdetails=1`;
+            const r = await fetch(url, { headers: { 'Accept-Language': 'da,ru,en' } });
             if (!r.ok) throw new Error('geo');
             const d = await r.json();
             const a = d.address || {};
-            const street = `${a.road || a.pedestrian || a.street || ''}${a.house_number ? ' ' + a.house_number : ''}`.trim();
-            const city = `${a.postcode ? a.postcode + ' ' : ''}${a.city || a.town || a.village || a.suburb || ''}`.trim();
-            return [street, city].filter(Boolean).join(', ') || d.display_name || `${lat}, ${lng}`;
+            const street = `${a.road || a.pedestrian || a.street || a.footway || ''}${a.house_number ? ' ' + a.house_number : ''}`.trim();
+            const city = `${a.postcode ? a.postcode + ' ' : ''}${a.city || a.town || a.village || a.suburb || a.municipality || ''}`.trim();
+            const combined = [street, city].filter(Boolean).join(', ');
+            return combined || d.display_name || `${lat}, ${lng}`;
           } catch {
             return `${lat}, ${lng}`;
           }
         }
 
         function saveDetectedSite(addr) {
-          if (!addr) return;
-          detectedSite = addr;
-          localStorage.setItem('luxe_auto_site', addr);
+          if (!addr || isCompanyAddress(addr) || addr.startsWith('Определяем')) return;
+          currentLiveAddress = addr;
+          localStorage.setItem('luxe_live_site', addr);
 
-          // Добавляем адрес в популярные ключи списков объектов в localStorage, если они есть
           ['sites', 'objects', 'addresses', 'workSites', 'luxe_sites'].forEach((key) => {
             try {
               const raw = localStorage.getItem(key);
               if (!raw) return;
               const parsed = JSON.parse(raw);
               if (Array.isArray(parsed)) {
-                const exists = parsed.some((item) =>
+                const filtered = parsed.filter((item) => {
+                  const val = typeof item === 'string' ? item : (item && (item.name || item.address || item.title || ''));
+                  return !isCompanyAddress(val);
+                });
+                const exists = filtered.some((item) =>
                   typeof item === 'string'
                     ? item === addr
                     : (item && (item.name === addr || item.address === addr || item.title === addr))
                 );
                 if (!exists) {
-                  parsed.unshift(typeof parsed[0] === 'string' ? addr : { id: String(Date.now()), name: addr, address: addr });
-                  localStorage.setItem(key, JSON.stringify(parsed));
+                  const sample = filtered[0];
+                  filtered.unshift(
+                    typeof sample === 'object' && sample !== null
+                      ? { ...sample, id: sample.id || String(Date.now()), name: addr, address: addr, title: addr }
+                      : addr
+                  );
                 }
+                localStorage.setItem(key, JSON.stringify(filtered));
               }
             } catch {}
           });
         }
 
-        function refreshGPS() {
-          if (!navigator.geolocation) return;
-          navigator.geolocation.getCurrentPosition(
-            async (pos) => {
-              const lat = Number(pos.coords.latitude.toFixed(6));
-              const lng = Number(pos.coords.longitude.toFixed(6));
-              const addr = await reverseAddress(lat, lng);
-              saveDetectedSite(addr);
-              autoFillSiteSelects(addr);
-            },
-            () => {},
-            { enableHighAccuracy: true, timeout: 7000, maximumAge: 15000 }
-          );
-        }
-
-        function autoFillSiteSelects(addr = detectedSite) {
+        function applyAddressToSelects(addr) {
+          if (!addr || isCompanyAddress(addr)) return;
           document.querySelectorAll('select').forEach((sel) => {
-            const hasEmptyOrPlaceholder =
-              !sel.value ||
-              sel.value.includes('Выберите') ||
-              sel.value.includes('объект') ||
-              sel.selectedIndex <= 0;
+            // Удаляем навязанный адрес компании из опций, если он там появился
+            Array.from(sel.options).forEach((o) => {
+              if (isCompanyAddress(o.value) || isCompanyAddress(o.textContent)) {
+                o.remove();
+              }
+            });
 
-            if (!hasEmptyOrPlaceholder) return;
-
-            // Если в списке есть реальный объект (не пустой и не плейсхолдер) — выбираем первый реальный
-            const realOption = Array.from(sel.options).find(
-              (o) => o.value && !o.value.includes('Выберите') && !o.disabled && o.textContent.trim() && !o.textContent.includes('Выберите')
-            );
-            if (realOption) {
-              sel.value = realOption.value;
-              sel.dispatchEvent(new Event('change', { bubbles: true }));
-              return;
+            let opt = Array.from(sel.options).find((o) => o.value === addr || o.textContent.trim() === addr);
+            if (!opt) {
+              opt = document.createElement('option');
+              opt.value = addr;
+              opt.textContent = addr;
+              sel.insertBefore(opt, sel.firstChild);
             }
-
-            // Иначе добавляем определённый по GPS адрес и выбираем его
-            const opt = document.createElement('option');
-            opt.value = addr;
-            opt.textContent = addr;
-            sel.appendChild(opt);
-            sel.value = addr;
+            sel.value = opt.value;
             sel.dispatchEvent(new Event('change', { bubbles: true }));
           });
         }
 
-        // Перехватываем alert("Выберите объект перед стартом смены!") и автоматически подставляем адрес
+        function fetchLiveGPS(forceFresh = false) {
+          if (!forceFresh && gpsPromise) return gpsPromise;
+
+          gpsPromise = new Promise((resolve) => {
+            if (!navigator.geolocation) {
+              const fallback = currentLiveAddress || 'Локация без GPS';
+              resolve(fallback);
+              return;
+            }
+
+            navigator.geolocation.getCurrentPosition(
+              async (pos) => {
+                const lat = Number(pos.coords.latitude.toFixed(6));
+                const lng = Number(pos.coords.longitude.toFixed(6));
+                const addr = await reverseAddress(lat, lng);
+                const finalAddr = addr && !isCompanyAddress(addr) ? addr : `${lat}, ${lng}`;
+                saveDetectedSite(finalAddr);
+                applyAddressToSelects(finalAddr);
+                gpsPromise = null;
+                resolve(finalAddr);
+              },
+              () => {
+                const fallback = currentLiveAddress || 'Локация (GPS не подтверждён)';
+                gpsPromise = null;
+                resolve(fallback);
+              },
+              { enableHighAccuracy: true, timeout: 9000, maximumAge: forceFresh ? 0 : 10000 }
+            );
+          });
+
+          return gpsPromise;
+        }
+
+        // При клике на кнопку старта смены сначала получаем актуальный адрес человека по GPS
+        document.addEventListener('click', async (e) => {
+          const btn = e.target.closest('button');
+          if (!btn) return;
+          const label = (btn.textContent || '').trim().toLowerCase();
+          if (label.includes('старт') || label.includes('начать') || label.includes('смен')) {
+            const addr = await fetchLiveGPS(true);
+            applyAddressToSelects(addr);
+          }
+        }, true);
+
         const origAlert = window.alert.bind(window);
-        window.alert = function (msg) {
+        window.alert = async function (msg) {
           if (typeof msg === 'string' && msg.toLowerCase().includes('объект')) {
-            autoFillSiteSelects(detectedSite);
-            refreshGPS();
+            const addr = await fetchLiveGPS(true);
+            applyAddressToSelects(addr);
             return;
           }
           return origAlert(msg);
         };
 
-        const observer = new MutationObserver(() => autoFillSiteSelects(detectedSite));
+        const observer = new MutationObserver(() => {
+          if (currentLiveAddress) {
+            applyAddressToSelects(currentLiveAddress);
+          }
+        });
         observer.observe(document.body, { childList: true, subtree: true });
 
-        saveDetectedSite(detectedSite);
-        refreshGPS();
-        setTimeout(() => autoFillSiteSelects(detectedSite), 600);
+        fetchLiveGPS(true);
       })();
     </script>
   </body>
